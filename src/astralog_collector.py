@@ -11,7 +11,7 @@ PORT = 8883
 TOPIC = "esa/astralog/telemetry"
 USER = "students"
 PASSWORD = "Listeningstuff26"
-OUTPUT_DIR = "collector_output"
+OUTPUT_DIR = "output_collector"
 
 class TelemetryCollector:
     def __init__(self, mode, limit, sequence_period=100):
