@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  dev-env:
+    build: .
+    # Questa riga è il trucco: collega la tua cartella locale dentro il container!
+    volumes:
+      - .:/app
+    # Tiene il container acceso in background così puoi entrarci e uscirci quando vuoi
+    command: tail -f /dev/null
