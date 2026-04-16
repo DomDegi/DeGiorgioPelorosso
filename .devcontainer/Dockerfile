@@ -8,6 +8,9 @@ ENV PYTHONUNBUFFERED=1
 # Imposta la cartella di lavoro dentro il container
 WORKDIR /workspace
 
+# Updates system and installs git
+RUN apt-get update && apt-get install -y git
+
 # Copia SOLO il file dei requisiti all'inizio (sfrutta la cache di Docker)
 COPY requirements.txt .
 
