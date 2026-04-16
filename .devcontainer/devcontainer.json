@@ -1,0 +1,33 @@
+{
+  "name": "AstraLog-HPC Dev",
+  "dockerComposeFile": "./docker-compose.yml",
+  "service": "dev-env",
+  "workspaceFolder": "/workspace/DegiorgioPelorosso",
+  
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "git.enableSmartCommit": true,
+        "git.autofetch": true
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance"
+      ]
+    }
+  },
+
+  // Collega il file .gitconfig del tuo Mac al container
+  "mounts": [
+    "source=${localEnv:HOME}/.gitconfig,target=/root/.gitconfig,type=bind,consistency=cached"
+  ],
+
+  // Assicura che le credenziali (password/token) passino in modo sicuro
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "configureZshAsDefaultShell": true,
+      "upgradePackages": false
+    }
+  }
+}

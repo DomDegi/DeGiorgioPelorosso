@@ -5,6 +5,6 @@ services:
     build: .
     # Questa riga è il trucco: collega la tua cartella locale dentro il container!
     volumes:
-      - .:/app
+      - ../..:/workspace
     # Tiene il container acceso in background così puoi entrarci e uscirci quando vuoi
     command: tail -f /dev/null

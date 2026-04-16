@@ -6,7 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 # Imposta la cartella di lavoro dentro il container
-WORKDIR /app
+WORKDIR /workspace
 
 # Copia SOLO il file dei requisiti all'inizio (sfrutta la cache di Docker)
 COPY requirements.txt .
