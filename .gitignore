@@ -10,6 +10,10 @@ env/
 venv/
 ENV/
 
+# Descktop services store
+.DS_Store
+**/.DS_Store
+
 # Distribution / packaging
 dist/
 build/
