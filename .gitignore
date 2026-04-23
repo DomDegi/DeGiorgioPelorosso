@@ -20,3 +20,16 @@ build/
 .idea/
 *.swp
 .DS_Store (for Mac users)
+
+# Documents and UMLs
+docs/
+
+# Ignores telemetry data which are too big
+csv_input/*large*.csv
+csv_input/*medium*.csv
+
+# Ignores local output directory
+output/
+
+# Ignores slurms outputs
+# slurm-*.out
