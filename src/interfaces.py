@@ -11,7 +11,7 @@ Differentiation of the used terminology:
 """
 
 from abc import ABC, abstractmethod
-from typing import Tuple
+from typing import Tuple,Optional
 import pandas as pd
 
 
@@ -74,28 +74,33 @@ class IStateMemory(ABC):
     Interface for the memory tracking component.
     
     Architecture Role:
-    - Reason for Interface: Stateful rules (e.g., "5 consecutive errors") require tracking
-      data across multiple batches. This interface hides how that state is stored 
-      (e.g., in a Python Dictionary, Redis, or Memcached).
+    - Reason for Interface: Stateful rules (e.g., "5 consecutive errors") and Step rules 
+      require tracking data across multiple batches. This hides how state is stored.
     - Implemented by: `DictStateMemory` (stores state in local RAM).
     - Interfaced with: `PandasRulesEngine` (queries this component during rule evaluation).
     """
     
-    @abstractmethod
-    def increment_consecutive_count(self, rule_id: str, sensor_id: str) -> int:
-        """Increments the anomaly counter for a specific sensor and returns the new count."""
-        pass
-
-    @abstractmethod
-    def reset_consecutive_count(self, rule_id: str, sensor_id: str) -> None:
-        """Resets the anomaly counter to zero when a sensor returns to a valid state."""
-        pass
-
+    # --- For the Stateful Rules (Consecutive alerts) ---
     @abstractmethod
     def get_current_count(self, rule_id: str, sensor_id: str) -> int:
-        """Retrieves the current anomaly count without modifying the underlying state."""
+        """Retrieves the current anomaly count carried over from the previous batch."""
         pass
 
+    @abstractmethod
+    def set_consecutive_count(self, rule_id: str, sensor_id: str, count: int) -> None:
+        """Overwrites the anomaly counter with the final calculated streak of the current batch."""
+        pass
+
+    # --- For the Step Difference Rules (T_n - T_{n-1}) ---
+    @abstractmethod
+    def get_last_value(self, sensor_id: str) -> Optional[float]:
+        """Retrieves the absolute value of the sensor recorded at the very end of the last batch."""
+        pass
+
+    @abstractmethod
+    def set_last_value(self, sensor_id: str, value: float) -> None:
+        """Saves the final value of the sensor in the current batch to be used in the next one."""
+        pass
 
 class IOutputWriter(ABC):
     """
