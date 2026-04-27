@@ -107,7 +107,7 @@ class PandasRulesEngine(IRulesEngine):
 
         # Map the results back to the full batch index
         full_mask = pd.Series(False, index=batch.index)
-        full_mask.update(alarm_mask_sensor)
+        full_mask.loc[alarm_mask_sensor.index] = alarm_mask_sensor
         return full_mask
 
     # ==========================================
