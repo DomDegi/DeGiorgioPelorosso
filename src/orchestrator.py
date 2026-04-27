@@ -54,7 +54,7 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
         valid_telemetry, alarm_telemetry = rules_engine.evaluate_rules(telemetry_batch)
         total_alarms += len(alarm_telemetry)
 
-        print(f"   ⚙️ Processing Batch #{batch_counter} | Rows: {len(telemetry_batch)} | Alarms Found: {len(alarm_telemetry)}")
+        print(f"  Processing Batch #{batch_counter} | Rows: {len(telemetry_batch)} | Alarms Found: {len(alarm_telemetry)}")
 
         # 3. Write outputs
         # The Writer handles the physical I/O chunking to the disk

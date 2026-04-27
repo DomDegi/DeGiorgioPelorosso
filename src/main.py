@@ -1,35 +1,40 @@
 import argparse
-
-# Import the 'orchestrator' function from the 'orchestrator.py' file
-# Note: both files must be in the same folder.
+import time
 from orchestrator import orchestrator 
 
 def main():
-    # Define the input and output paths
-    input_path = "csv_input/export_sat_alpha_small.csv"
-    output_path = "csv_output/"
+    # FIX: Added the config paths so the Orchestrator can actually build the Engine and Reader
+    input_path = "data/export_sat_alpha_massive.csv" # Pointing to your stress test!
+    output_path = "output/"
+    rules_path = "config/rules.json"
+    sensors_path = "config/sensors.yaml"
 
-    # Initialize the argument parser
-    parser = argparse.ArgumentParser(description="Main script with hardcoded paths and command-line argument for batch size.")
+    parser = argparse.ArgumentParser(description="AstraLog-HPC Main Execution Script")
     
-    # Define the expected argument
+    # In HPC environments, batch_size is critical to tune RAM consumption.
     parser.add_argument(
         '--batch_size', 
         type=int, 
         required=True, 
-        help="Specifies the batch size (integer)."
+        help="Specifies the batch size (integer) for RAM-safe processing."
     )
     
-    # Parse the arguments passed from the terminal
     args = parser.parse_args()
     
-    # Call the imported function passing the argument
+    # Start the timer for performance benchmarking
+    start_time = time.perf_counter()
+    
+    # Call the orchestrator passing ALL required arguments
     orchestrator(
         batch_size=args.batch_size, 
         input_path=input_path, 
-        output_path=output_path
+        output_path=output_path,
+        rules_path=rules_path,
+        sensors_path=sensors_path
     )
-
+    
+    end_time = time.perf_counter()
+    print(f"⏱️ Total Execution Time: {end_time - start_time:.4f} seconds")
 
 if __name__ == "__main__":
     main()
