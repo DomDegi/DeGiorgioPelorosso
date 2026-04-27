@@ -5,8 +5,12 @@ import argparse
 from orchestrator import orchestrator 
 
 def main():
+    # Define the input and output paths
+    input_path = "csv_input/export_sat_alpha_small.csv"
+    output_path = "csv_output/"
+
     # Initialize the argument parser
-    parser = argparse.ArgumentParser(description="Main script that calls an external orchestrator.")
+    parser = argparse.ArgumentParser(description="Main script with hardcoded paths and command-line argument for batch size.")
     
     # Define the expected argument
     parser.add_argument(
@@ -20,7 +24,11 @@ def main():
     args = parser.parse_args()
     
     # Call the imported function passing the argument
-    orchestrator(args.batch_size)
+    orchestrator(
+        batch_size=args.batch_size, 
+        input_path=input_path, 
+        output_path=output_path
+    )
 
 
 if __name__ == "__main__":
