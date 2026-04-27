@@ -217,6 +217,11 @@ class PandasRulesEngine(IRulesEngine):
 
         # --- PHASE 3: Separate Valid vs Alarms ---
         # A row is valid ONLY IF it triggered ZERO alarms across all masks
+        
+        # If threre are no rules -> everything is valid
+        if not rule_masks:
+            return telemetry_batch, pd.DataFrame(columns=['timestamp', 'rule_id', 'priority', 'sensor_id', 'value'])
+        
         combined_mask = pd.concat(rule_masks.values(), axis=1).any(axis=1)
         valid_telemetry = telemetry_batch[~combined_mask]
         
