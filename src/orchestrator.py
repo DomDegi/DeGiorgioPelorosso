@@ -2,15 +2,15 @@ import pandas as pd
 
 # 1. Import the Interfaces (Abstract Base Classes)
 # Assuming the provided abstract classes are saved in 'interfaces.py'
-from interfaces import ITelemetryReader, IRulesEngine, IOutputWriter
+from interfaces import ITelemetryReader, IRulesEngine, IOutputWriter, IStateMemory
 
 # 2. Import the Concrete Implementations from your existing files
 from reader import CSVTelemetryReader
 from rules_engine import PandasRulesEngine
 from writer import CSVOutputWriter
+from state_memory import DictStateMemory
 
-
-def orchestrator(batch_size: int, input_path: str, output_path: str) -> None:
+def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path: str, sensors_path: str) -> None:
     """
     Main orchestration loop that ties the system components together.
     It relies entirely on interfaces to interact with the underlying components.
@@ -25,12 +25,16 @@ def orchestrator(batch_size: int, input_path: str, output_path: str) -> None:
     # Here we instantiate the concrete classes, but we type-hint them 
     # strictly as their Interfaces. This is the Python equivalent of Java's:
     # ITelemetryReader reader = new CSVTelemetryReader(input_path);
-    
-    reader: ITelemetryReader = CSVTelemetryReader(input_path)
-    rules_engine: IRulesEngine = PandasRulesEngine()
-    writer: IOutputWriter = CSVOutputWriter(output_path)
+    memory: IStateMemory = DictStateMemory()
+    reader: ITelemetryReader = CSVTelemetryReader(sensors_yaml_path = sensors_path,
+                                                  csv_path = input_path)
+    rules_engine: IRulesEngine = PandasRulesEngine(rules_json_path = rules_path,
+                                                   memory = memory)
+    writer: IOutputWriter = CSVOutputWriter(output_path = output_path,
+                                            clean_start = true)
 
     batch_counter = 0
+    total_alarms = 0
 
     # --- MAIN ORCHESTRATION LOOP ---
     while True:
@@ -44,11 +48,13 @@ def orchestrator(batch_size: int, input_path: str, output_path: str) -> None:
             break
 
         batch_counter += 1
-        print(f"Processing Batch #{batch_counter} (Rows: {len(telemetry_batch)})...")
-
+ 
         # 2. Evaluate business logic
         # The Rules Engine separates nominal data from anomalies
         valid_telemetry, alarm_telemetry = rules_engine.evaluate_rules(telemetry_batch)
+        total_alarms += len(alarm_telemetry)
+
+        print(f"   ⚙️ Processing Batch #{batch_counter} | Rows: {len(telemetry_batch)} | Alarms Found: {len(alarm_telemetry)}")
 
         # 3. Write outputs
         # The Writer handles the physical I/O chunking to the disk
@@ -60,3 +66,4 @@ def orchestrator(batch_size: int, input_path: str, output_path: str) -> None:
 
     print("\n--- AstraLog-HPC Orchestrator Finished ---")
     print(f"Total batches processed: {batch_counter}")
+    print(f"Total alarms detected  : {total_alarms}")
