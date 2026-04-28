@@ -1,6 +1,6 @@
 import os
 import pandas as pd
-from interfaces import IOutputWriter
+from src.interfaces import IOutputWriter
 
 class CSVOutputWriter(IOutputWriter):
     """
@@ -42,6 +42,14 @@ class CSVOutputWriter(IOutputWriter):
 
         # Work on a copy to avoid SettingWithCopyWarning
         valid_df = valid_telemetry.copy()
+
+        # ---------------------------------------------------------
+        # DETERMINISM
+        # Sort rigorously by timestamp and sensor name alphabetically.
+        # This guarantees the concatenated string output is exactly the 
+        # same in every run, satisfying the "verifiability" requirement.
+        # ---------------------------------------------------------
+        valid_df = valid_df.sort_values(by=['timestamp', 'sensor_id'])
 
         # 1. Create the base string for each row: "TEMP-01:25.5"
         valid_df['sensor_string'] = valid_df['sensor_id'].astype(str) + ":" + valid_df['value'].astype(str)

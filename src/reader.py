@@ -1,7 +1,7 @@
 import pandas as pd
 import yaml
 import os
-from .interfaces import ITelemetryReader
+from src.interfaces import ITelemetryReader
 
 class CSVTelemetryReader(ITelemetryReader):
     """
@@ -83,4 +83,7 @@ class CSVTelemetryReader(ITelemetryReader):
             
         except StopIteration:
             # Pandas throws this when the file is completely finished
+            return pd.DataFrame()
+        except pd.errors.ParserError as e:
+            print(f"\n[WARNING] Found corruption (EOF). Ignoring trash.\n Details: {e}")
             return pd.DataFrame()

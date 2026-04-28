@@ -1,13 +1,12 @@
 import argparse
 import time
-from orchestrator import orchestrator 
+from src.orchestrator import orchestrator 
 
 def main():
-    # FIX: Added the config paths so the Orchestrator can actually build the Engine and Reader
-    input_path = "data/export_sat_alpha_massive.csv" # Pointing to your stress test!
+    input_path = "csv_input/export_sat_alpha_custom.csv"
     output_path = "output/"
-    rules_path = "config/rules.json"
-    sensors_path = "config/sensors.yaml"
+    rules_path = "config/Current_rules_sat_alpha.json"
+    sensors_path = "config/Current_sensors_sat_alpha.yaml"
 
     parser = argparse.ArgumentParser(description="AstraLog-HPC Main Execution Script")
     

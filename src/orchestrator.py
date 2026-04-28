@@ -1,14 +1,15 @@
 import pandas as pd
+import yaml
 
 # 1. Import the Interfaces (Abstract Base Classes)
 # Assuming the provided abstract classes are saved in 'interfaces.py'
-from interfaces import ITelemetryReader, IRulesEngine, IOutputWriter, IStateMemory
+from src.interfaces import ITelemetryReader, IRulesEngine, IOutputWriter, IStateMemory
 
 # 2. Import the Concrete Implementations from your existing files
-from reader import CSVTelemetryReader
-from rules_engine import PandasRulesEngine
-from writer import CSVOutputWriter
-from state_memory import DictStateMemory
+from src.reader import CSVTelemetryReader
+from src.rules_engine import PandasRulesEngine
+from src.writer import CSVOutputWriter
+from src.state_memory import DictStateMemory
 
 def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path: str, sensors_path: str) -> None:
     """
@@ -16,6 +17,28 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
     It relies entirely on interfaces to interact with the underlying components.
     """
     print("--- AstraLog-HPC Orchestrator Started ---")
+
+    # ---------------------------------------------------------
+    # SAFETY FIX: Ensure batch_size is a multiple of total sensors
+    # ---------------------------------------------------------
+    # 1. Peek into the sensors.yaml to count the active sensors
+    with open(sensors_path, 'r') as f:
+        sensor_config = yaml.safe_load(f)
+        total_sensors = len(sensor_config['sensors'])
+    
+    # 2. Sanitize the batch size. If they asked for 10,000 and we have 12 sensors,
+    # we round down to the nearest multiple: 9,996 (833 full timestamps * 12 sensors)
+    safe_batch_size = (batch_size // total_sensors) * total_sensors
+    
+    if safe_batch_size == 0:
+        safe_batch_size = total_sensors # Ensure it's at least one full timestamp
+        
+    if safe_batch_size != batch_size:
+        print(f"[WARNING] Requested batch_size ({batch_size}) splits timestamps.")
+        print(f"          Auto-adjusting to safe multiple: {safe_batch_size}")
+        batch_size = safe_batch_size
+    # ---------------------------------------------------------
+
     print(f"Batch Size : {batch_size}")
     print(f"Input Path : {input_path}")
     print(f"Output Path: {output_path}")
@@ -31,7 +54,7 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
     rules_engine: IRulesEngine = PandasRulesEngine(rules_json_path = rules_path,
                                                    memory = memory)
     writer: IOutputWriter = CSVOutputWriter(output_path = output_path,
-                                            clean_start = true)
+                                            clean_start = True)
 
     batch_counter = 0
     total_alarms = 0

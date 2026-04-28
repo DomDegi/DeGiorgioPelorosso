@@ -2,7 +2,7 @@ import pandas as pd
 import operator
 import json
 from typing import Tuple
-from .interfaces import IRulesEngine, IStateMemory
+from src.interfaces import IRulesEngine, IStateMemory
 
 class PandasRulesEngine(IRulesEngine):
     
@@ -149,7 +149,7 @@ class PandasRulesEngine(IRulesEngine):
         alarm_mask_sensor = streak_lengths >= rule['consecutive_measurements']
 
         full_mask = pd.Series(False, index=batch.index)
-        full_mask.update(alarm_mask_sensor)
+        full_mask.loc[alarm_mask_sensor.index] = alarm_mask_sensor
         return full_mask
 
     # ==========================================
@@ -214,24 +214,34 @@ class PandasRulesEngine(IRulesEngine):
                 parent_sensors = ",".join([r['sensor_id'] for r in self.rules if r['rule_id'] in rule['conditions']])
                 failed_rows['sensor_id'] = parent_sensors
                 alarms_list.append(failed_rows)
-
         # --- PHASE 3: Separate Valid vs Alarms ---
-        # A row is valid ONLY IF it triggered ZERO alarms across all masks
         
-        # If threre are no rules -> everything is valid
+        # If no rules were loaded or parsed, everything is valid
         if not rule_masks:
             return telemetry_batch, pd.DataFrame(columns=['timestamp', 'rule_id', 'priority', 'sensor_id', 'value'])
-        
+
+        # 1. FIND INFECTED TIMESTAMPS
+        # Combine all rule masks to find any row that triggered an alarm
         combined_mask = pd.concat(rule_masks.values(), axis=1).any(axis=1)
-        valid_telemetry = telemetry_batch[~combined_mask]
+        infected_rows = telemetry_batch[combined_mask]
         
-        # Combine all generated alarms into a single DataFrame
+        # Extract the unique timestamps that contain at least one anomaly
+        anomalous_timestamps = infected_rows['timestamp'].unique()
+
+        # 2. CREATE VALID DATA
+        # CRITICAL FIX: The requirement states "the whole time_stamp is discarded".
+        # We must filter out ALL rows whose timestamp appears in the anomalous list.
+        valid_telemetry = telemetry_batch[~telemetry_batch['timestamp'].isin(anomalous_timestamps)].copy()
+
+        # 3. CREATE ALARMS DATA
+        # We use the pre-compiled alarms_list because it already contains 
+        # the injected 'rule_id' and 'priority' metadata required by the Writer.
         if alarms_list:
             alarm_telemetry = pd.concat(alarms_list, ignore_index=True)
-            # Standardize columns for the Writer: TIMESTAMP;RULE_ID;PRIORITY;VIOLATED_SENSOR(S);CURRENT_VALUE(S)
+            # Reorder columns to strictly match the Writer's expected format
             alarm_telemetry = alarm_telemetry[['timestamp', 'rule_id', 'priority', 'sensor_id', 'value']]
         else:
-            # Return an empty dataframe with the correct columns if no alarms triggered
+            # Return an empty shell if no alarms were found in this batch
             alarm_telemetry = pd.DataFrame(columns=['timestamp', 'rule_id', 'priority', 'sensor_id', 'value'])
 
         return valid_telemetry, alarm_telemetry

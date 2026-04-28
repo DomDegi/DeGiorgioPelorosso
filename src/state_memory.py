@@ -1,5 +1,5 @@
 from typing import Optional
-from .interfaces import IStateMemory
+from src.interfaces import IStateMemory
 
 class DictStateMemory(IStateMemory):
     """
