@@ -129,3 +129,50 @@ def test_orchestrator_separates_valid_and_alarms(engine):
     assert len(alarms_df) == 1
     assert alarms_df.iloc[0]['sensor_id'] == 'TEMP-01'
     assert alarms_df.iloc[0]['rule_id'] == 'R1' # Ensure the rule ID was attached
+
+def test_stateful_rule_streak_reset(engine):
+    """
+    EDGE CASE: A stateful rule requires 3 consecutive errors. 
+    The sequence is: Error -> Error -> Valid -> Error.
+    The rule MUST reset on the 'Valid' and NOT trigger an alarm on the final Error.
+    """
+    telemetry = pd.DataFrame({
+        'timestamp': ['T1', 'T2', 'T3', 'T4'],
+        'sensor_id': ['VOLT-01', 'VOLT-01', 'VOLT-01', 'VOLT-01'],
+        'value': [10.0, 10.0, 25.0, 10.0] # 10.0 is an error (e.g., < 20.0)
+    })
+    
+    # Mocking rule: VOLT-01 < 20.0 for 3 consecutive times
+    engine.rules = [{
+        "rule_id": "R1", "type": "stateful", "sensor_id": "VOLT-01", 
+        "operator": "<", "value": 20.0, "consecutive_measurements": 3, "priority": "HIGH"
+    }]
+    
+    # We only pass telemetry, the engine fixture already has memory injected internally
+    valid_df, alarm_df = engine.evaluate_rules(telemetry)
+    
+    # Because of the reset at T3, the streak never hits 3. Alarms should be empty.
+    assert alarm_df.empty, "Stateful rule failed to reset streak upon receiving valid data!"
+
+def test_missing_sensor_guard_clause(engine):
+    """
+    EDGE CASE: The rules.json asks to monitor 'TEMP-05', but the current
+    batch doesn't contain any readings for 'TEMP-05'. The engine must 
+    bypass the rule securely without throwing a KeyError or NaN Exception.
+    """
+    telemetry = pd.DataFrame({
+        'timestamp': ['T1'],
+        'sensor_id': ['PRES-02'], # TEMP-05 is completely missing
+        'value': [101.3]
+    })
+    
+    engine.rules = [{
+        "rule_id": "R1", "type": "simple", "sensor_id": "TEMP-05", 
+        "operator": ">", "value": 50.0, "priority": "HIGH"
+    }]
+    
+    # We only pass telemetry, the engine fixture already has memory injected internally
+    valid_df, alarm_df = engine.evaluate_rules(telemetry)
+    
+    assert alarm_df.empty, "Missing sensor should not generate alarms"
+    assert len(valid_df) == 1, "Valid data should remain intact"
