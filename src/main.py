@@ -26,28 +26,38 @@ def main():
 
     parser = argparse.ArgumentParser(description="AstraLog-HPC Main Execution Script")
     
-    # In HPC environments, batch_size is critical to tune RAM consumption.
-    parser.add_argument(
-        '--batch_size', 
-        type=int, 
-        required=True, 
-        help="Specifies the batch size (integer) for RAM-safe processing."
-    )
+    # Arguments
+    parser.add_argument('--batch_size', type=int, required=True, help="Batch size for RAM-safe processing.")
     
+    parser.add_argument('--mode', type=str, choices=['csv', 'stream'], default='csv', 
+                        help="Data ingestion mode: 'csv' for static files, 'stream' for live REST API.")
+    parser.add_argument('--input_path', type=str, default=input_path, 
+                        help="Path to input CSV (used only in 'csv' mode).")
+    parser.add_argument('--endpoint_url', type=str, 
+                        help="Digital Twin REST API endpoint (REQUIRED if mode is 'stream').")
+    parser.add_argument('--time_window_ms', type=int, default=1000, 
+                        help="Time window in milliseconds to request from the API (default: 1000).")
+
     args = parser.parse_args()
-    
-    # Start the timer for performance benchmarking
+
+    # Validate stream arguments
+    if args.mode == 'stream' and not args.endpoint_url:
+        parser.error("--endpoint_url is required when --mode is set to 'stream'")
+
     start_time = time.perf_counter()
-    
-    # Call the orchestrator passing ALL required arguments
+
+    # Pass everything to the orchestrator
     orchestrator(
         batch_size=args.batch_size, 
-        input_path=input_path, 
         output_path=output_path,
         rules_path=rules_path,
-        sensors_path=sensors_path
+        sensors_path=sensors_path,
+        mode=args.mode,
+        input_path=args.input_path,
+        endpoint_url=args.endpoint_url,
+        time_window_ms=args.time_window_ms
     )
-    
+
     end_time = time.perf_counter()
     logger.info(f"Total Execution Time: {end_time - start_time:.4f} seconds")
 
