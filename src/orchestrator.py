@@ -7,14 +7,14 @@ import logging
 from src.interfaces import ITelemetryReader, IRulesEngine, IOutputWriter, IStateMemory
 
 # 2. Import the Concrete Implementations from your existing files
-from src.reader import CSVTelemetryReader
+from src.reader import CSVTelemetryReader, StreamTelemetryReader
 from src.rules_engine import PandasRulesEngine
 from src.writer import CSVOutputWriter
 from src.state_memory import DictStateMemory
 
 logger = logging.getLogger(__name__)
 
-def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path: str, sensors_path: str) -> None:
+def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path: str, sensors_path: str, mode: str = 'csv', endpoint_url: str = None) -> None:
     """
     Main orchestration loop that ties the system components together.
     It relies entirely on interfaces to interact with the underlying components.
@@ -22,9 +22,6 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
     
     logger.info("AstraLog-HPC Orchestrator Started")
     
-    # ---------------------------------------------------------
-    # SAFETY FIX: Ensure batch_size is a multiple of total sensors
-    # ---------------------------------------------------------
     # Peek into the sensors.yaml to count the active sensors
     with open(sensors_path, 'r') as f:
         sensor_config = yaml.safe_load(f)
@@ -38,23 +35,24 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
         safe_batch_size = total_sensors # Ensure it's at least one full timestamp
         
     if safe_batch_size != batch_size:
-            logger.warning(f"Requested batch_size ({batch_size}) splits timestamps. Auto-adjusting to safe multiple: {safe_batch_size}")
-            batch_size = safe_batch_size
-    # ---------------------------------------------------------
+        logger.warning(f"Requested batch_size ({batch_size}) splits timestamps. Auto-adjusting to safe multiple: {safe_batch_size}")
+        batch_size = safe_batch_size
 
-    logger.info(f"Configuration loaded -> Batch Size: {batch_size} | Input: {input_path} | Output: {output_path}")   
+    logger.info(f"Configuration loaded -> Mode: {mode.upper()} | Batch Size: {batch_size} | Input: {input_path} | Output: {output_path}")   
 
     # --- COMPONENT INSTANTIATION ---
     # Here we instantiate the concrete classes, but we type-hint them 
     # strictly as their Interfaces. This is the Python equivalent of Java's:
     # ITelemetryReader reader = new CSVTelemetryReader(input_path);
     memory: IStateMemory = DictStateMemory()
-    reader: ITelemetryReader = CSVTelemetryReader(sensors_yaml_path = sensors_path,
-                                                  csv_path = input_path)
-    rules_engine: IRulesEngine = PandasRulesEngine(rules_json_path = rules_path,
-                                                   memory = memory)
-    writer: IOutputWriter = CSVOutputWriter(output_path = output_path,
-                                            clean_start = True)
+    
+    if mode == 'stream':
+        reader: ITelemetryReader = StreamTelemetryReader(sensors_yaml_path=sensors_path, broker_url=endpoint_url)
+    else:
+        reader: ITelemetryReader = CSVTelemetryReader(sensors_yaml_path=sensors_path, csv_path=input_path)
+        
+    rules_engine: IRulesEngine = PandasRulesEngine(rules_json_path=rules_path, memory=memory)
+    writer: IOutputWriter = CSVOutputWriter(output_path=output_path, clean_start=True)
 
     batch_counter = 0
     total_alarms = 0
@@ -67,7 +65,7 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
 
         # Check for End of File (EOF)
         if telemetry_batch.empty:
-            logger.info("EOF reached. No more telemetry to process.")
+            logger.info("EOF reached or stream ended. No more telemetry to process.")
             break
 
         batch_counter += 1
