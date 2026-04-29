@@ -19,7 +19,7 @@ logging.basicConfig(
 logger = logging.getLogger("AstraLog-Main")
 
 def main():
-    input_path = "csv_input/export_sat_alpha_large.csv"
+    input_path = "csv_input/export_sat_alpha_custom_no_corruption.csv"
     output_path = "output/"
     rules_path = "config/Current_rules_sat_alpha.json"
     sensors_path = "config/Current_sensors_sat_alpha.yaml"

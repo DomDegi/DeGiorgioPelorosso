@@ -69,8 +69,13 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
 
         # Check for End of File (EOF)
         if telemetry_batch.empty:
-            logger.info("EOF reached or stream ended. No more telemetry to process.")
-            break
+            if mode == 'stream':
+                # Don't break! Just loop back around and wait for the collector to download more files.
+                continue 
+            else:
+                # In CSV mode, an empty batch truly means we hit the bottom of the file.
+                logger.info("EOF reached. No more telemetry to process.")
+                break
 
         batch_counter += 1
  
