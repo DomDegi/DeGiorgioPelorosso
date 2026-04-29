@@ -1,0 +1,35 @@
+@startuml
+left to right direction
+skinparam packageStyle rectangle
+
+actor "System Operator" as Operator
+actor "SLURM Scheduler" as SLURM
+actor "Spacecraft Master-system" as Spacecraft <<Data Source>>
+
+rectangle "AstraLog-HPC System" {
+
+  ' The overarching goal of the human actor
+  usecase "ProduceMissionReports" as UC_Goal
+
+  ' The main execution wrapper
+  usecase "ExecuteTelemetryProcessing" as UC_Main
+
+  ' The internal functional goals (Included to make the main execution work)
+  usecase "ExtractAndSanitizeData" as UC_Sanitize
+  usecase "EvaluateValidityRules" as UC_Eval
+  usecase "FormatMissionReports" as UC_Export
+
+  ' Hierarchical relationships
+  UC_Goal ..> UC_Main : <<include>>
+  UC_Main ..> UC_Sanitize : <<include>>
+  UC_Main ..> UC_Eval : <<include>>
+  UC_Main ..> UC_Export : <<include>>
+}
+
+' Actor Interactions
+Operator --> UC_Goal : "<<initiate>>"
+SLURM --> UC_Main : "<<initiate>>"
+Spacecraft --> UC_Sanitize : "<<streams>>"
+
+
+@enduml
