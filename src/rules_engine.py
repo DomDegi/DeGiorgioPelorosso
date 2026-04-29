@@ -70,7 +70,8 @@ class PandasRulesEngine(IRulesEngine):
         # 2. Fetch the correct mathematical operation safely
         op_func = self.OPERATORS.get(rule['operator'])
         if not op_func:
-            raise ValueError(f"CRITICAL: Unknown operator '{rule['operator']}' in rule {rule['rule_id']}")
+            logger.error(f"Failed to parse rule {rule['rule_id']}: Unknown operator '{rule['operator']}'. Rule skipped.")
+            return pd.Series(False, index=batch.index)
             
         # 3. Apply the mathematical operator to the ENTIRE 'value' column at once.
         # Example: If operator is '>', this translates to batch['value'] > 50.0
@@ -261,83 +262,152 @@ class PandasRulesEngine(IRulesEngine):
 
 import numpy as np
 
-class NumpyRulesEngine:
+class NumpyRulesEngine(IRulesEngine):
     """
     High-Performance Rules Engine utilizing raw NumPy C-arrays for 
-    vectorized boolean mask evaluations, bypassing Pandas iteration overhead.
+    vectorized mathematical evaluations, bypassing Pandas iteration overhead.
     """
     
-    def __init__(self, rules_config: list):
-        self.rules = rules_config
+    OPERATORS = {
+        ">": operator.gt,
+        "<": operator.lt,
+        ">=": operator.ge,
+        "<=": operator.le,
+        "==": operator.eq,
+        "!=": operator.ne
+    }
+
+    def __init__(self, rules_json_path: str, memory: IStateMemory):
+        with open(rules_json_path, 'r') as f:
+            self.rules = json.load(f)
+        self.memory = memory
+        
+        # Sort by priority
+        priority_map = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
+        self.rules.sort(
+            key=lambda r: priority_map.get(r.get('priority', 'LOW').upper(), 1), 
+            reverse=True
+        )
         logger.info(f"NumpyRulesEngine initialized with {len(self.rules)} rules.")
 
-    def evaluate_rules(self, telemetry_batch: pd.DataFrame, state_memory=None) -> tuple[pd.DataFrame, pd.DataFrame]:
-        """
-        Evaluates mathematical constraints. 
-        Returns (valid_telemetry_df, alarms_df).
-        """
-        if telemetry_batch.empty:
-            return telemetry_batch, pd.DataFrame()
+    def _evaluate_simple_rule(self, raw_values: np.ndarray, sensor_mask: np.ndarray, rule: dict, total_rows: int) -> np.ndarray:
+        op_func = self.OPERATORS[rule['operator']]
+        
+        full_mask = np.zeros(total_rows, dtype=bool)
+        # Evaluate only where the sensor matches
+        full_mask[sensor_mask] = op_func(raw_values[sensor_mask], rule['value'])
+        return full_mask
 
-        # 1. Extract raw NumPy arrays for bare-metal performance
+    def _evaluate_step_rule(self, raw_values: np.ndarray, sensor_mask: np.ndarray, rule: dict, total_rows: int) -> np.ndarray:
+        sensor_vals = raw_values[sensor_mask]
+        full_mask = np.zeros(total_rows, dtype=bool)
+        
+        if len(sensor_vals) == 0:
+            return full_mask
+
+        diffs = np.zeros(len(sensor_vals), dtype=float)
+        diffs[1:] = np.diff(sensor_vals)
+
+        # Bridge with State Memory
+        last_known = self.memory.get_last_value(rule['sensor_id'])
+        if last_known is not None:
+            diffs[0] = sensor_vals[0] - last_known
+        else:
+            diffs[0] = 0.0
+
+        self.memory.set_last_value(rule['sensor_id'], sensor_vals[-1])
+        
+        op_func = self.OPERATORS[rule['operator']]
+        full_mask[sensor_mask] = op_func(diffs, rule['value'])
+        return full_mask
+
+    def _evaluate_stateful_rule(self, raw_values: np.ndarray, sensor_mask: np.ndarray, rule: dict, total_rows: int) -> np.ndarray:
+        sensor_vals = raw_values[sensor_mask]
+        full_mask = np.zeros(total_rows, dtype=bool)
+        
+        if len(sensor_vals) == 0:
+            return full_mask
+
+        op_func = self.OPERATORS[rule['operator']]
+        condition_met = op_func(sensor_vals, rule['value'])
+        
+        # Fast NumPy iteration for streaks
+        streaks = np.zeros(len(sensor_vals), dtype=int)
+        current_streak = self.memory.get_current_count(rule['rule_id'], rule['sensor_id'])
+
+        for i in range(len(condition_met)):
+            if condition_met[i]:
+                current_streak += 1
+                streaks[i] = current_streak
+            else:
+                current_streak = 0
+                streaks[i] = 0
+
+        self.memory.set_consecutive_count(rule['rule_id'], rule['sensor_id'], current_streak)
+        
+        full_mask[sensor_mask] = (streaks >= rule['consecutive_measurements'])
+        return full_mask
+
+    def evaluate_rules(self, telemetry_batch: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        if telemetry_batch.empty or not self.rules:
+            return telemetry_batch, pd.DataFrame(columns=['timestamp', 'rule_id', 'priority', 'sensor_id', 'value'])
+
+        # 1. Extract to C-arrays
+        total_rows = len(telemetry_batch)
         raw_values = telemetry_batch['value'].to_numpy()
         sensor_ids = telemetry_batch['sensor_id'].to_numpy()
-        timestamps = telemetry_batch['timestamp'].to_numpy()
         
-        # 2. Initialize a master boolean mask (False means NO violation)
-        total_rows = len(telemetry_batch)
-        master_violation_mask = np.zeros(total_rows, dtype=bool)
-        
-        # We will collect specific alarm details here to reconstruct the alarms.log
+        rule_masks = {}
         alarms_list = []
 
-        # 3. HPC Vectorized Evaluation Loop
-        for rule in self.rules:
-            r_type = rule.get('type')
-            target_sensor = rule.get('sensor_id')
-            limit = rule.get('value')
-            op = rule.get('operator')
+        # 2. Evaluate Base Rules
+        for rule in [r for r in self.rules if r['type'] != 'correlation']:
+            sensor_mask = (sensor_ids == rule['sensor_id'])
             
-            # Mask to isolate only the rows belonging to the target sensor
-            sensor_mask = (sensor_ids == target_sensor)
-            
-            if r_type == 'simple':
-                # Evaluate mathematical operator securely via NumPy logic
-                if op == '>':
-                    current_violation = (raw_values > limit) & sensor_mask
-                elif op == '<':
-                    current_violation = (raw_values < limit) & sensor_mask
-                elif op == '==':
-                    current_violation = (raw_values == limit) & sensor_mask
-                else:
-                    current_violation = np.zeros(total_rows, dtype=bool)
-
-                # Update the master mask using bitwise OR
-                master_violation_mask = master_violation_mask | current_violation
+            if rule['type'] == 'simple':
+                mask = self._evaluate_simple_rule(raw_values, sensor_mask, rule, total_rows)
+            elif rule['type'] == 'step_difference':
+                mask = self._evaluate_step_rule(raw_values, sensor_mask, rule, total_rows)
+            elif rule['type'] == 'stateful':
+                mask = self._evaluate_stateful_rule(raw_values, sensor_mask, rule, total_rows)
                 
-                # Extract indices of violations to log specific alarms
-                violation_indices = np.where(current_violation)[0]
-                for idx in violation_indices:
-                    alarms_list.append({
-                        'timestamp': timestamps[idx],
-                        'sensor_id': target_sensor,
-                        'rule_id': rule.get('rule_id'),
-                        'priority': rule.get('priority'),
-                        'message': f"Value {raw_values[idx]} violated {op} {limit}"
-                    })
-                    
-            # (Note for submission: You would add Step/Stateful logic here, 
-            # querying state_memory similar to the Pandas implementation but using np.where)
+            rule_masks[rule['rule_id']] = mask
 
-        # 4. Strict Exclusion Logic (If one sensor fails, whole timestamp fails)
-        # Find all unique timestamps that have AT LEAST ONE violation
-        violated_timestamps = np.unique(timestamps[master_violation_mask])
-        
-        # Create a mask that flags EVERY row that shares a violated timestamp
-        compromised_timestamp_mask = np.isin(timestamps, violated_timestamps)
+            # Extract failed rows for logging
+            failed_indices = np.where(mask)[0]
+            if len(failed_indices) > 0:
+                failed_df = telemetry_batch.iloc[failed_indices].copy()
+                failed_df['rule_id'] = rule['rule_id']
+                failed_df['priority'] = rule.get('priority', 'LOW')
+                alarms_list.append(failed_df)
 
-        # 5. Route to output DataFrames
-        valid_df = telemetry_batch[~compromised_timestamp_mask]
-        alarms_df = pd.DataFrame(alarms_list)
+        # 3. Evaluate Correlation Rules
+        for rule in [r for r in self.rules if r['type'] == 'correlation']:
+            mask_a = rule_masks[rule['conditions'][0]]
+            mask_b = rule_masks[rule['conditions'][1]]
+            
+            mask = (mask_a & mask_b) if rule['logic'] == 'AND' else (mask_a | mask_b)
+            rule_masks[rule['rule_id']] = mask
+            
+            failed_indices = np.where(mask)[0]
+            if len(failed_indices) > 0:
+                failed_df = telemetry_batch.iloc[failed_indices].copy()
+                failed_df['rule_id'] = rule['rule_id']
+                failed_df['priority'] = rule.get('priority', 'HIGH')
+                failed_df['sensor_id'] = ",".join(rule['conditions'])
+                alarms_list.append(failed_df)
 
-        return valid_df, alarms_df
+        # 4. Filter and Return
+        # Find timestamps that have at least one True in ANY mask
+        combined_mask = np.any(list(rule_masks.values()), axis=0)
+        anomalous_timestamps = telemetry_batch.iloc[np.where(combined_mask)[0]]['timestamp'].unique()
+
+        valid_telemetry = telemetry_batch[~telemetry_batch['timestamp'].isin(anomalous_timestamps)].copy()
+
+        if alarms_list:
+            alarm_telemetry = pd.concat(alarms_list, ignore_index=True)
+            alarm_telemetry = alarm_telemetry[['timestamp', 'rule_id', 'priority', 'sensor_id', 'value']]
+        else:
+            alarm_telemetry = pd.DataFrame(columns=['timestamp', 'rule_id', 'priority', 'sensor_id', 'value'])
+
+        return valid_telemetry, alarm_telemetry
