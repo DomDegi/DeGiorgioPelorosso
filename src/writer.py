@@ -1,6 +1,9 @@
+import logging
 import os
 import pandas as pd
 from src.interfaces import IOutputWriter
+
+logger = logging.getLogger(__name__)
 
 class CSVOutputWriter(IOutputWriter):
     """
@@ -29,6 +32,8 @@ class CSVOutputWriter(IOutputWriter):
                 os.remove(self.valid_file_path)
             if os.path.exists(self.alarms_file_path):
                 os.remove(self.alarms_file_path)
+        
+        logger.info(f"Output Writer initialized. Target directory: {self.output_path} (Clean Start: {clean_start})")
 
     def write_valid_batch(self, valid_telemetry: pd.DataFrame) -> None:
         """
@@ -69,6 +74,8 @@ class CSVOutputWriter(IOutputWriter):
             index=False,
             header=False
         )
+        
+        logger.debug(f"Successfully appended nominal records for {len(grouped)} timestamps to valid_data.csv")
 
     def write_alarms_batch(self, alarm_telemetry: pd.DataFrame) -> None:
         """
@@ -86,7 +93,7 @@ class CSVOutputWriter(IOutputWriter):
         try:
             formatted_alarms = alarm_telemetry[expected_columns]
         except KeyError as e:
-            print(f"[ERROR] OutputWriter missing columns. Check RulesEngine output. Missing: {e}")
+            logger.error(f"OutputWriter missing columns. Check RulesEngine output. Missing: {e}")
             return
 
         # Append directly as a standard CSV with semicolon separator
@@ -97,3 +104,4 @@ class CSVOutputWriter(IOutputWriter):
             header=False, 
             index=False
         )
+        logger.debug(f"Successfully appended {len(formatted_alarms)} anomaly records to alarms.log")
