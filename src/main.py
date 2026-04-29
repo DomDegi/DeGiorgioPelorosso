@@ -1,6 +1,14 @@
+import logging
 import argparse
 import time
 from src.orchestrator import orchestrator 
+
+# Configure the logger format and level
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger("AstraLog-Main")
 
 def main():
     input_path = "csv_input/export_sat_alpha_custom.csv"
