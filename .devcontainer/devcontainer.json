@@ -18,9 +18,10 @@
     }
   },
   "mounts": [
-  "source=${localEnv:SSH_AUTH_SOCK},target=/ssh-agent,type=bind"
+    "source=${localEnv:SSH_AUTH_SOCK},target=/ssh-agent,type=bind"
   ],
   "remoteEnv": {
     "SSH_AUTH_SOCK": "/ssh-agent"
-  }
+  },
+  "postStartCommand": "if [ -f requirements.txt ]; then pip install -r requirements.txt; fi"
 }
