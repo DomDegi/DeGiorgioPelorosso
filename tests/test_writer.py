@@ -51,7 +51,7 @@ def test_write_valid_batch_determinism(temp_output_dir):
     expected = "2026-04-14T08:00:00Z;NOMINAL;ACCEL-02:1.2|TEMP-01:25.5"
     assert content == expected, "Writer failed to sort sensors alphabetically!"
 
-def test_write_alarms_missing_columns(temp_output_dir, capsys):
+def test_write_alarms_missing_columns(temp_output_dir, caplog):
     """
     EDGE CASE: If the RulesEngine accidentally returns a DataFrame missing
     the 'rule_id' column, the writer must NOT crash the SLURM job. It should
@@ -70,8 +70,7 @@ def test_write_alarms_missing_columns(temp_output_dir, capsys):
     writer.write_alarms_batch(bad_alarm_data)
     
     # Capture standard output to verify the error was logged gracefully
-    captured = capsys.readouterr()
-    assert "[ERROR] OutputWriter missing columns" in captured.out
+    assert "OutputWriter missing columns" in caplog.text
     assert not os.path.exists(writer.alarms_file_path), "Should not write corrupted data to disk"
 
 def test_empty_dataframe_handling(temp_output_dir):

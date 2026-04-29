@@ -20,7 +20,7 @@ def mock_environment():
 @patch("src.orchestrator.PandasRulesEngine")
 @patch("src.orchestrator.CSVOutputWriter")
 @patch("src.orchestrator.DictStateMemory")
-def test_batch_auto_alignment(MockMemory, MockWriter, MockEngine, MockReader, mock_environment, capsys):
+def test_batch_auto_alignment(MockMemory, MockWriter, MockEngine, MockReader, mock_environment, caplog):
     """
     EDGE CASE: The user asks for a batch_size of 10, but there are 3 sensors.
     10 / 3 = 3.33 (Timestamp split!). The orchestrator MUST auto-adjust 
@@ -42,9 +42,8 @@ def test_batch_auto_alignment(MockMemory, MockWriter, MockEngine, MockReader, mo
     )
     
     # Verify the warning was printed
-    captured = capsys.readouterr()
-    assert "[WARNING] Requested batch_size (10) splits timestamps" in captured.out
-    assert "Auto-adjusting to safe multiple: 9" in captured.out
+    assert "Requested batch_size (10) splits timestamps" in caplog.text
+    assert "Auto-adjusting to safe multiple: 9" in caplog.text
     
     # Verify the Reader was called with the SAFE batch size (9), not 10!
     mock_reader_instance.extract_batch.assert_called_once_with(9)
