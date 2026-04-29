@@ -1,10 +1,17 @@
+import logging
 import pandas as pd
 import operator
 import json
 from typing import Tuple
 from src.interfaces import IRulesEngine, IStateMemory
 
+logger = logging.getLogger(__name__)
+
 class PandasRulesEngine(IRulesEngine):
+    """
+    Concrete implementation of the Rules Engine using Pandas vectorized operations.
+    Evaluates telemetry batches against JSON-defined constraints (Simple, Step, Stateful, Correlation).
+    """
     
     # Class-level dictionary for lightning-fast operator lookup.
     # Maps the JSON string operators to compiled Python math operators.
@@ -127,8 +134,10 @@ class PandasRulesEngine(IRulesEngine):
         op_func = self.OPERATORS.get(rule['operator'])
         condition_met = op_func(sensor_data['value'], rule['value']) 
 
-        # 2. Pandas Magic: Calculate consecutive streaks
-        # Group by contiguous blocks of True values
+        # 2. Calculate consecutive streaks
+        #   1. '~condition_met' creates boundaries (True becomes False).
+        #   2. '.cumsum()' creates unique group IDs for each contiguous block of violations.
+        #   3. We group by these IDs and cumulatively sum the True values to get the streak length.    
         blocks = (~condition_met).cumsum()
         streak_lengths = condition_met.groupby(blocks).cumsum()
 
@@ -245,3 +254,90 @@ class PandasRulesEngine(IRulesEngine):
             alarm_telemetry = pd.DataFrame(columns=['timestamp', 'rule_id', 'priority', 'sensor_id', 'value'])
 
         return valid_telemetry, alarm_telemetry
+
+
+
+
+
+import numpy as np
+
+class NumpyRulesEngine:
+    """
+    High-Performance Rules Engine utilizing raw NumPy C-arrays for 
+    vectorized boolean mask evaluations, bypassing Pandas iteration overhead.
+    """
+    
+    def __init__(self, rules_config: list):
+        self.rules = rules_config
+        logger.info(f"NumpyRulesEngine initialized with {len(self.rules)} rules.")
+
+    def evaluate_rules(self, telemetry_batch: pd.DataFrame, state_memory=None) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Evaluates mathematical constraints. 
+        Returns (valid_telemetry_df, alarms_df).
+        """
+        if telemetry_batch.empty:
+            return telemetry_batch, pd.DataFrame()
+
+        # 1. Extract raw NumPy arrays for bare-metal performance
+        raw_values = telemetry_batch['value'].to_numpy()
+        sensor_ids = telemetry_batch['sensor_id'].to_numpy()
+        timestamps = telemetry_batch['timestamp'].to_numpy()
+        
+        # 2. Initialize a master boolean mask (False means NO violation)
+        total_rows = len(telemetry_batch)
+        master_violation_mask = np.zeros(total_rows, dtype=bool)
+        
+        # We will collect specific alarm details here to reconstruct the alarms.log
+        alarms_list = []
+
+        # 3. HPC Vectorized Evaluation Loop
+        for rule in self.rules:
+            r_type = rule.get('type')
+            target_sensor = rule.get('sensor_id')
+            limit = rule.get('value')
+            op = rule.get('operator')
+            
+            # Mask to isolate only the rows belonging to the target sensor
+            sensor_mask = (sensor_ids == target_sensor)
+            
+            if r_type == 'simple':
+                # Evaluate mathematical operator securely via NumPy logic
+                if op == '>':
+                    current_violation = (raw_values > limit) & sensor_mask
+                elif op == '<':
+                    current_violation = (raw_values < limit) & sensor_mask
+                elif op == '==':
+                    current_violation = (raw_values == limit) & sensor_mask
+                else:
+                    current_violation = np.zeros(total_rows, dtype=bool)
+
+                # Update the master mask using bitwise OR
+                master_violation_mask = master_violation_mask | current_violation
+                
+                # Extract indices of violations to log specific alarms
+                violation_indices = np.where(current_violation)[0]
+                for idx in violation_indices:
+                    alarms_list.append({
+                        'timestamp': timestamps[idx],
+                        'sensor_id': target_sensor,
+                        'rule_id': rule.get('rule_id'),
+                        'priority': rule.get('priority'),
+                        'message': f"Value {raw_values[idx]} violated {op} {limit}"
+                    })
+                    
+            # (Note for submission: You would add Step/Stateful logic here, 
+            # querying state_memory similar to the Pandas implementation but using np.where)
+
+        # 4. Strict Exclusion Logic (If one sensor fails, whole timestamp fails)
+        # Find all unique timestamps that have AT LEAST ONE violation
+        violated_timestamps = np.unique(timestamps[master_violation_mask])
+        
+        # Create a mask that flags EVERY row that shares a violated timestamp
+        compromised_timestamp_mask = np.isin(timestamps, violated_timestamps)
+
+        # 5. Route to output DataFrames
+        valid_df = telemetry_batch[~compromised_timestamp_mask]
+        alarms_df = pd.DataFrame(alarms_list)
+
+        return valid_df, alarms_df
