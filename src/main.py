@@ -1,12 +1,20 @@
+import os
 import logging
 import argparse
 import time
 from src.orchestrator import orchestrator 
 
-# Configure the logger format and level
+# Ensure the output directory exists before the logger tries to create a file there
+os.makedirs("output", exist_ok=True)
+
+# Configure the logger to write to BOTH the console and a dedicated file
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("output/execution.log", mode='w'), # Saves to a file (overwrites old runs)
+        logging.StreamHandler()                                # Prints to the terminal
+    ]
 )
 logger = logging.getLogger("AstraLog-Main")
 
@@ -41,7 +49,7 @@ def main():
     )
     
     end_time = time.perf_counter()
-    print(f"⏱️ Total Execution Time: {end_time - start_time:.4f} seconds")
+    logger.info(f"Total Execution Time: {end_time - start_time:.4f} seconds")
 
 if __name__ == "__main__":
     main()
