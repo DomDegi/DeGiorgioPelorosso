@@ -2,7 +2,10 @@ import os
 import yaml
 import logging
 import pandas as pd
-import requests
+import glob
+import json
+import csv
+import time
 from typing import List, Dict
 
 from src.interfaces import ITelemetryReader
@@ -23,11 +26,13 @@ class CSVTelemetryReader(ITelemetryReader):
             logger.debug(f"No CSV path provided. Defaulting to: {csv_path}")
             
         # Initialize the Pandas iterator. 
-        # on_bad_lines='skip' satisfies the "Malformed JSON/CSV" requirement.
+        # on_bad_lines='skip' handles malformed structure.
+        # quoting=csv.QUOTE_NONE prevents unclosed quotes at EOF from causing a ParserError.
         self._csv_iterator = pd.read_csv(
             csv_path,
             iterator=True,
-            on_bad_lines='skip'
+            on_bad_lines='skip',
+            quoting=csv.QUOTE_NONE
         )
         logger.info(f"CSVTelemetryReader initialized successfully. Target file: {csv_path}")
     
@@ -58,7 +63,7 @@ class CSVTelemetryReader(ITelemetryReader):
         # ============================================
         # 1. Solving schema errors (missing fields)
         # ============================================
-        mandatory_fields = ['timestamp', 'sensor_id', 'value', 'priority']
+        mandatory_fields = ['timestamp', 'sensor_id', 'value']
         
         for col in mandatory_fields:
             if col not in clean_batch.columns:
@@ -101,20 +106,18 @@ class CSVTelemetryReader(ITelemetryReader):
             return pd.DataFrame()
 
 
-
 class StreamTelemetryReader(ITelemetryReader):
     """
-    Implements the Strategy Pattern to read live telemetry from a digital twin
-    REST API endpoint (Maho/astralog_collector) instead of a static CSV file.
+    Reads live telemetry dumped by the standalone astralog_collector.py.
+    Watches the output directory for new .txt files and processes them.
     """
     
-    def __init__(self, endpoint_url: str, sensors_yaml_path: str, time_window_ms: int = 1000):
-        self.endpoint_url = endpoint_url
-        self.time_window_ms = time_window_ms
-        self.is_active = True
-        
+    def __init__(self, directory_path: str = "output_collector", sensors_yaml_path: str = None):
+        self.directory_path = directory_path
         self.sensors_config = self._load_yaml(sensors_yaml_path)
-        logger.info(f"StreamTelemetryReader initialized. Target API: {self.endpoint_url} | Window: {self.time_window_ms}ms")
+        
+        os.makedirs(self.directory_path, exist_ok=True)
+        logger.info(f"StreamTelemetryReader initialized. Watching directory: {self.directory_path}")
 
     def _load_yaml(self, path: str) -> dict:
         if not path:
@@ -126,57 +129,58 @@ class StreamTelemetryReader(ITelemetryReader):
             logger.critical(f"Fatal Error: YAML configuration file not found at {path}")
             raise FileNotFoundError(f"Error: YAML file not found at {path}")
 
+    def _sanitize_batch(self, batch: pd.DataFrame) -> pd.DataFrame:
+        initial_len = len(batch)
+        clean_batch = batch.copy()
+        
+        mandatory_fields = ['timestamp', 'sensor_id', 'value']
+        for col in mandatory_fields:
+            if col not in clean_batch.columns:
+                clean_batch[col] = pd.NA
+                
+        clean_batch = clean_batch.dropna(subset=mandatory_fields)
+        
+        clean_batch['value'] = pd.to_numeric(clean_batch['value'], errors='coerce')
+        clean_batch = clean_batch.dropna(subset=['value'])
+        
+        dropped = initial_len - len(clean_batch)
+        if dropped > 0:
+            logger.debug(f"Dropped {dropped} network packets due to schema/type corruption.")
+            
+        return clean_batch
+
     def extract_batch(self, batch_size: int) -> pd.DataFrame:
         """
-        Fetches telemetry packets from the network stream.
-        We pass 'time_window_ms' to the API to gather the batch.
+        Polls the directory for new files, parses the JSON, and deletes the files to prevent reprocessing.
         """
-        if not self.is_active:
+        files = sorted(glob.glob(os.path.join(self.directory_path, "*.txt")))
+        
+        if not files:
+            time.sleep(1)
             return pd.DataFrame()
 
-        try:
-            logger.debug(f"Polling Digital Twin API for the last {self.time_window_ms}ms of telemetry...")
-            
-            response = requests.get(f"{self.endpoint_url}?window_ms={self.time_window_ms}", timeout=5)
-            response.raise_for_status() 
-            
-            raw_data = response.json()
-            
-            if not raw_data:
-                logger.info("Telemetry stream returned empty payload. Assuming end of stream or simulation paused.")
-                self.is_active = False
-                return pd.DataFrame()
+        all_data = []
+        files_to_process = files[:5] 
 
-            df = pd.DataFrame(raw_data)
-            initial_len = len(df)
-            logger.debug(f"Fetched {initial_len} raw packets from stream.")
-            
-            mandatory_fields = ['timestamp', 'sensor_id', 'value', 'priority']
-            for col in mandatory_fields:
-                if col not in df.columns:
-                    df[col] = pd.NA
-                    
-            df = df.dropna(subset=mandatory_fields)
-            df['value'] = pd.to_numeric(df['value'], errors='coerce')
-            df = df.dropna(subset=['value'])
-            
-            dropped = initial_len - len(df)
-            if dropped > 0:
-                logger.debug(f"Dropped {dropped} network packets due to schema/type corruption.")
-            
-            logger.debug(f"Successfully processed {len(df)} packets from stream.")
-            return df
+        for file_path in files_to_process:
+            try:
+                with open(file_path, 'r') as f:
+                    for line in f:
+                        if not line.strip(): continue
+                        try:
+                            data = json.loads(line.strip())
+                            all_data.append(data)
+                        except json.JSONDecodeError:
+                            pass 
+                            
+                os.remove(file_path)
+            except Exception as e:
+                logger.error(f"Error reading {file_path}: {e}")
 
-        except requests.exceptions.Timeout:
-            logger.warning(f"Timeout waiting for Digital Twin at {self.endpoint_url}. Retrying next cycle...")
+        if not all_data:
             return pd.DataFrame()
-            
-        except requests.exceptions.ConnectionError as e:
-            logger.error(f"Failed to connect to Digital Twin. Is the collector running? Error: {e}")
-            self.is_active = False
-            return pd.DataFrame()
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Network stream error: {e}")
-            self.is_active = False
-            return pd.DataFrame()
+
+        raw_chunk = pd.DataFrame(all_data)
+        clean_batch = self._sanitize_batch(raw_chunk)
+        
+        return clean_batch.head(batch_size)
