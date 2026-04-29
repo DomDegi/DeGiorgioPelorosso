@@ -14,7 +14,7 @@ from src.state_memory import DictStateMemory
 
 logger = logging.getLogger(__name__)
 
-def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path: str, sensors_path: str, mode: str = 'csv', endpoint_url: str = None) -> None:
+def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path: str, sensors_path: str, mode: str = 'csv') -> None:
     """
     Main orchestration loop that ties the system components together.
     It relies entirely on interfaces to interact with the underlying components.
@@ -22,6 +22,9 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
     
     logger.info("AstraLog-HPC Orchestrator Started")
     
+    # ---------------------------------------------------------
+    # SAFETY FIX: Ensure batch_size is a multiple of total sensors
+    # ---------------------------------------------------------
     # Peek into the sensors.yaml to count the active sensors
     with open(sensors_path, 'r') as f:
         sensor_config = yaml.safe_load(f)
@@ -37,6 +40,7 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
     if safe_batch_size != batch_size:
         logger.warning(f"Requested batch_size ({batch_size}) splits timestamps. Auto-adjusting to safe multiple: {safe_batch_size}")
         batch_size = safe_batch_size
+    # ---------------------------------------------------------
 
     logger.info(f"Configuration loaded -> Mode: {mode.upper()} | Batch Size: {batch_size} | Input: {input_path} | Output: {output_path}")   
 
@@ -47,7 +51,7 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
     memory: IStateMemory = DictStateMemory()
     
     if mode == 'stream':
-        reader: ITelemetryReader = StreamTelemetryReader(sensors_yaml_path=sensors_path, broker_url=endpoint_url)
+        reader: ITelemetryReader = StreamTelemetryReader(sensors_yaml_path=sensors_path, directory_path="output_collector")
     else:
         reader: ITelemetryReader = CSVTelemetryReader(sensors_yaml_path=sensors_path, csv_path=input_path)
         
