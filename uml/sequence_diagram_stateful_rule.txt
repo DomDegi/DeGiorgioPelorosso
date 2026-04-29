@@ -1,0 +1,67 @@
+@startuml
+skinparam maxMessageSize 150
+skinparam monochrome true
+skinparam DefaultFontName Arial
+
+
+actor "SLURM Scheduler" as SLURM
+participant "Batch Orchestrator" as Orchestrator
+participant "Telemetry Reader" as Reader
+participant "Rules Engine" as Engine
+participant "State Memory" as Memory
+participant "Output Writer" as Writer
+
+SLURM -> Orchestrator: Execute batch job
+activate Orchestrator
+
+loop Until end of telemetry_stream.csv (Chunking)
+    Orchestrator -> Reader: extract_batch(batch_size)
+    activate Reader
+    Reader --> Orchestrator: List[Valid_Telemetry_Packets]
+    deactivate Reader
+
+    loop For each packet in the chunk
+        Orchestrator -> Engine: evaluate_rules(packet)
+        activate Engine
+
+        Engine -> Engine: evaluate_condition(packet)
+        note right: Check e.g., VOLT-MAIN < 20.0
+
+        alt Condition True (Anomaly detected)
+            Engine -> Memory: increment_consecutive_count(rule_id, sensor_id)
+            activate Memory
+            Memory --> Engine: current_count
+            deactivate Memory
+
+            alt current_count >= consecutive_measurements (e.g., 5)
+                Engine --> Orchestrator: Trigger ALARM (Rule_ID, Sensor)
+            else current_count < consecutive_measurements
+                Engine --> Orchestrator: VALID (Pending)
+            end
+
+        else Condition False (Valid state)
+            Engine -> Memory: reset_consecutive_count(rule_id, sensor_id)
+            Engine --> Orchestrator: VALID
+        end
+        deactivate Engine
+    end
+
+    note over Orchestrator: Separates chunk into Valid and Alarm datasets
+
+    opt If valid data exists in chunk
+        Orchestrator -> Writer: write_valid_chunk(valid_dataframe)
+        activate Writer
+        Writer -> "valid_data.csv": append(VALID rows)
+        deactivate Writer
+    end
+
+    opt If alarms exist in chunk
+        Orchestrator -> Writer: write_alarms_chunk(alarm_dataframe)
+        activate Writer
+        Writer -> "alarms.log": append(ALARM rows)
+        deactivate Writer
+    end
+end
+
+deactivate Orchestrator
+@enduml

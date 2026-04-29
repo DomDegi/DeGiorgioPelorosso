@@ -13,9 +13,8 @@ This repository contains the **Full Track** solution for the **AstraLog-HPC** pr
 
 | Name Surname | Person Code | Role / Main Focus | Effort (Hours) |
 | :--- | :--- | :--- | :--- |
-| **Student 1** | 12345678 | e.g., Software Architect & Backend Logic | XXh |
-| **Leonardo Pelorosso** | 10779110 | Use Cases, Domain assumptions, Requiremetns elicitation,  | 10h |
-| **Student 3** | 12345678 | e.g., QA, Pytest & Singularity Container, DevOps, CI/CD Pipeline & SLURM | XXh |
+| **Domenico DeGiorgio** |  | Software Architect, Backend Logic, Pytest, CI/CD Pipeline & SLURM| XXh |
+| **Leonardo Pelorosso** | 10779110 | Use Cases, Domain assumptions, Requiremetns elicitation, Singularity Container| 260h |
 
 *(Note: If your group has 3 or 4 students, explicitly describe who handled the distribution/parallelization logic below).*
 
