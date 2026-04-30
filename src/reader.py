@@ -26,7 +26,9 @@ class CSVTelemetryReader(ITelemetryReader):
             logger.debug(f"No CSV path provided. Defaulting to: {csv_path}")
             
         # Initialize the Pandas iterator. 
-        # on_bad_lines='skip' handles malformed structure.
+        # ============================================
+        # 1. Handling malformed JSON structure with on_bad_lines='skip'.
+        # ============================================
         # quoting=csv.QUOTE_NONE prevents unclosed quotes at EOF from causing a ParserError.
         self._csv_iterator = pd.read_csv(
             csv_path,
@@ -61,13 +63,13 @@ class CSVTelemetryReader(ITelemetryReader):
         clean_batch = batch.copy()
         
         # ============================================
-        # 1. Solving schema errors (missing fields)
+        # 2. Solving schema errors (missing fields)
         # ============================================
         mandatory_fields = ['timestamp', 'sensor_id', 'value']
         
         for col in mandatory_fields:
             if col not in clean_batch.columns:
-                clean_batch[col] = pd.NA
+                clean_batch[col] = pd.NA 
         
         clean_batch = clean_batch.dropna(subset=mandatory_fields)
         schema_drops = initial_len - len(clean_batch)
@@ -75,7 +77,7 @@ class CSVTelemetryReader(ITelemetryReader):
             logger.debug(f"Dropped {schema_drops} records due to missing mandatory schema fields.")
 
         # ==============================================
-        # 2. Solving type errors (invalid types error)
+        # 3. Solving type errors (invalid types error)
         # ==============================================
         len_before_type_check = len(clean_batch)
         clean_batch['value'] = pd.to_numeric(clean_batch['value'], errors='coerce')
