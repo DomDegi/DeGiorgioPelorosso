@@ -7,6 +7,7 @@ import json
 import csv
 import time
 from typing import List, Dict
+import numpy as np
 
 from src.interfaces import ITelemetryReader
 
@@ -54,55 +55,67 @@ class CSVTelemetryReader(ITelemetryReader):
     
     def _sanitize_batch(self, batch: pd.DataFrame) -> pd.DataFrame:
         """
-        Cleans the data before it enters the system.
-        Removes malformed rows, missing values, corrupted types, 
-        and handles optional fields like priority.
+        Cleans the data before it enters the system using STRICT TYPE CHECKING.
+        It does not attempt to convert or coerce malformed data; 
+        if a value has the wrong type, the row is dropped.
         """
         initial_len = len(batch)
         logger.debug(f"Sanitizing raw batch of {initial_len} records...")
         
+        # ============================================
+        # 1. Schema Check (Mandatory columns)
+        # ============================================
+        # Based on your test, 'priority' is also considered a mandatory column.
+        required_columns = ['timestamp', 'sensor_id', 'value', 'priority']
+        
+        # If even one column is missing, we drop the ENTIRE batch
+        for col in required_columns:
+            if col not in batch.columns:
+                logger.debug(f"Batch rejected: missing mandatory column '{col}'.")
+                return pd.DataFrame(columns=required_columns)
+                
         clean_batch = batch.copy()
         
-        # ============================================
-        # 1. Solving schema errors (missing mandatory fields)
-        # ============================================
-        mandatory_fields = ['timestamp', 'sensor_id', 'value']
-        
-        for col in mandatory_fields:
-            if col not in clean_batch.columns:
-                clean_batch[col] = pd.NA 
-                
-        clean_batch = clean_batch.dropna(subset=mandatory_fields)
+        # Immediately remove null values (NaN, pd.NA, None)
+        clean_batch = clean_batch.dropna(subset=required_columns)
 
         # ==============================================
-        # 2. Solving type/format errors (strict validation)
+        # 2. Strict Type Checking (No conversion)
         # ==============================================
-        # Check if value is strictly numeric
-        clean_batch['value'] = pd.to_numeric(clean_batch['value'], errors='coerce')
         
-        # Check if timestamp is a valid datetime string
-        parsed_timestamps = pd.to_datetime(clean_batch['timestamp'], errors='coerce')
+        # 1. Base type checks for strings
+        is_valid_ts = clean_batch['timestamp'].apply(lambda x: isinstance(x, str))
+        is_valid_id = clean_batch['sensor_id'].apply(lambda x: isinstance(x, str))
+        is_valid_prio = clean_batch['priority'].apply(lambda x: isinstance(x, str))
         
-        # Drop rows where value became NaN OR timestamp became NaT
-        clean_batch = clean_batch[clean_batch['value'].notna() & parsed_timestamps.notna()]
+        # 2. Specific check for NUMERIC format
+        # pd.to_numeric with errors='coerce' returns NaN for things like 'SENSOR_BROKEN'.
+        # .notna() turns this into a True/False mask. 
+        # We are JUST testing the type here; we are not mutating the actual column yet!
+        is_valid_val = pd.to_numeric(clean_batch['value'], errors='coerce').notna()
+        
+        # 3. Specific check for the timestamp FORMAT
+        is_valid_date_format = pd.to_datetime(clean_batch['timestamp'], errors='coerce').notna()
+
+        # Keep ONLY the rows that passed ALL checks
+        clean_batch = clean_batch[is_valid_ts & is_valid_id & is_valid_prio & is_valid_val & is_valid_date_format]
 
         # ==============================================
-        # 3. Handling the Optional 'priority' Field
+        # 3. Final Type Assignment (Fix for test matching)
         # ==============================================
-        valid_priorities = ['HIGH', 'MEDIUM', 'LOW']
-        
-        if 'priority' not in clean_batch.columns:
-            clean_batch['priority'] = 'LOW'
-        else:
-            clean_batch['priority'] = clean_batch['priority'].astype(str).str.upper()
-            clean_batch.loc[~clean_batch['priority'].isin(valid_priorities), 'priority'] = 'LOW'
+        # Now that all dirty data has been removed, we can safely set the proper 
+        # column types for the surviving data to avoid 'object' dtype mismatches in Pandas.
+        clean_batch['value'] = clean_batch['value'].astype(float)
+        clean_batch['timestamp'] = clean_batch['timestamp'].astype(str)
+        clean_batch['sensor_id'] = clean_batch['sensor_id'].astype(str)
+        clean_batch['priority'] = clean_batch['priority'].astype(str)
 
         # ==============================================
         # 4. Final Logging
         # ==============================================
         dropped = initial_len - len(clean_batch)
         if dropped > 0:
-            logger.debug(f"Dropped {dropped} records due to schema, type corruption, or malformed data.")
+            logger.debug(f"Dropped {dropped} records due to strict type corruption or malformed data.")
 
         logger.debug(f"Sanitization complete. {len(clean_batch)} valid records extracted.")
         return clean_batch

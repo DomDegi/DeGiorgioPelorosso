@@ -2,7 +2,7 @@ import pytest
 import pandas as pd
 import numpy as np
 from pandas.testing import assert_frame_equal
-from src.reader import CSVTelemetryReader
+from src.reader_0 import CSVTelemetryReader
 
 # ==========================================
 # FIXTURES
@@ -19,12 +19,16 @@ def bouncer():
 # TESTS
 # ==========================================
 def test_sanitize_batch_drops_corrupted_rows(bouncer):
-    # 1. ARRANGE: Create a "dirty" DataFrame that mimics the 3 project errors
+    # 1. ARRANGE: Create a "dirty" DataFrame that mimics 2 project errors
     dirty_data = pd.DataFrame({
-        'timestamp': ['2026-04-24T10:00Z', '2026-04-24T10:01Z', '2026-04-24T10:02Z', '2026-04-24T10:03Z'],
-        'sensor_id': ['TEMP-01', pd.NA, 'TEMP-03', 'TEMP-04'], # Row 1: Missing mandatory field (Schema Error)
-        'value': [25.5, 26.0, 'SENSOR_BROKEN', 28.5],          # Row 2: String instead of float (Type Error)
-        'priority': ['HIGH', 'LOW', 'HIGH', pd.NA]             # Row 3: Missing priority (Schema Error)
+        'timestamp': ['2026-04-24T10:00Z', '2026-04-24T10:01Z', '2026-04-24T10:02Z', 'TIME_STAMP_MALFORMED', 12, '2026-04-24T10:05Z', '2026-04-24T10:06Z'], 
+        # Malformed timestamp + wrong data type (int instead of string) 
+        'sensor_id': ['TEMP-01', pd.NA, 'TEMP-03', 'TEMP-04', 'TEMP-05', 13, 'TEMP-07'],     
+        # Missing mandatory field (Schema Error)
+        'value': [25.5, 26.0, 'SENSOR_BROKEN', 28.5, 29.0, 24.0, 23.5],               
+        # String instead of float (Type Error)
+        'priority': ['HIGH', 'LOW', 'HIGH', 'LOW', 'HIGH', 'LOW', 12]    
+        # Wrong data type (int instead of string)         
     })
     
     # 2. ACT: Pass the dirty data through our function

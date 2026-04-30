@@ -7,7 +7,7 @@ import logging
 from src.interfaces import ITelemetryReader, IRulesEngine, IOutputWriter, IStateMemory
 
 # 2. Import the Concrete Implementations from your existing files
-from src.reader import CSVTelemetryReader, StreamTelemetryReader
+from src.reader_0 import CSVTelemetryReader, StreamTelemetryReader
 from src.rules_engine import PandasRulesEngine
 from src.writer import CSVOutputWriter
 from src.state_memory import DictStateMemory
