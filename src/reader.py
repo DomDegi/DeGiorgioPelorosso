@@ -27,7 +27,7 @@ class CSVTelemetryReader(ITelemetryReader):
             
         # Initialize the Pandas iterator. 
         # ============================================
-        # 1. Handling malformed JSON structure with on_bad_lines='skip'.
+        # 1. Handling malformed CSV structure with on_bad_lines='skip'.
         # ============================================
         # quoting=csv.QUOTE_NONE prevents unclosed quotes at EOF from causing a ParserError.
         self._csv_iterator = pd.read_csv(
@@ -55,7 +55,8 @@ class CSVTelemetryReader(ITelemetryReader):
     def _sanitize_batch(self, batch: pd.DataFrame) -> pd.DataFrame:
         """
         Cleans the data before it enters the system.
-        Removes malformed rows, missing values, or corrupted types.
+        Removes malformed rows, missing values, corrupted types, 
+        and handles optional fields like priority.
         """
         initial_len = len(batch)
         logger.debug(f"Sanitizing raw batch of {initial_len} records...")
@@ -63,29 +64,45 @@ class CSVTelemetryReader(ITelemetryReader):
         clean_batch = batch.copy()
         
         # ============================================
-        # 2. Solving schema errors (missing fields)
+        # 1. Solving schema errors (missing mandatory fields)
         # ============================================
         mandatory_fields = ['timestamp', 'sensor_id', 'value']
         
         for col in mandatory_fields:
             if col not in clean_batch.columns:
                 clean_batch[col] = pd.NA 
-        
+                
         clean_batch = clean_batch.dropna(subset=mandatory_fields)
-        schema_drops = initial_len - len(clean_batch)
-        if schema_drops > 0:
-            logger.debug(f"Dropped {schema_drops} records due to missing mandatory schema fields.")
 
         # ==============================================
-        # 3. Solving type errors (invalid types error)
+        # 2. Solving type/format errors (strict validation)
         # ==============================================
-        len_before_type_check = len(clean_batch)
+        # Check if value is strictly numeric
         clean_batch['value'] = pd.to_numeric(clean_batch['value'], errors='coerce')
-        clean_batch = clean_batch.dropna(subset=['value'])
         
-        type_drops = len_before_type_check - len(clean_batch)
-        if type_drops > 0:
-            logger.debug(f"Dropped {type_drops} records due to invalid data types (non-numeric values).")
+        # Check if timestamp is a valid datetime string
+        parsed_timestamps = pd.to_datetime(clean_batch['timestamp'], errors='coerce')
+        
+        # Drop rows where value became NaN OR timestamp became NaT
+        clean_batch = clean_batch[clean_batch['value'].notna() & parsed_timestamps.notna()]
+
+        # ==============================================
+        # 3. Handling the Optional 'priority' Field
+        # ==============================================
+        valid_priorities = ['HIGH', 'MEDIUM', 'LOW']
+        
+        if 'priority' not in clean_batch.columns:
+            clean_batch['priority'] = 'LOW'
+        else:
+            clean_batch['priority'] = clean_batch['priority'].astype(str).str.upper()
+            clean_batch.loc[~clean_batch['priority'].isin(valid_priorities), 'priority'] = 'LOW'
+
+        # ==============================================
+        # 4. Final Logging
+        # ==============================================
+        dropped = initial_len - len(clean_batch)
+        if dropped > 0:
+            logger.debug(f"Dropped {dropped} records due to schema, type corruption, or malformed data.")
 
         logger.debug(f"Sanitization complete. {len(clean_batch)} valid records extracted.")
         return clean_batch
@@ -135,6 +152,7 @@ class StreamTelemetryReader(ITelemetryReader):
         initial_len = len(batch)
         clean_batch = batch.copy()
         
+        # 1. Schema check
         mandatory_fields = ['timestamp', 'sensor_id', 'value']
         for col in mandatory_fields:
             if col not in clean_batch.columns:
@@ -142,8 +160,18 @@ class StreamTelemetryReader(ITelemetryReader):
                 
         clean_batch = clean_batch.dropna(subset=mandatory_fields)
         
+        # 2. Type Check (Value & Timestamp)
         clean_batch['value'] = pd.to_numeric(clean_batch['value'], errors='coerce')
-        clean_batch = clean_batch.dropna(subset=['value'])
+        parsed_timestamps = pd.to_datetime(clean_batch['timestamp'], errors='coerce')
+        clean_batch = clean_batch[clean_batch['value'].notna() & parsed_timestamps.notna()]
+        
+        # 3. Priority check
+        valid_priorities = ['HIGH', 'MEDIUM', 'LOW']
+        if 'priority' not in clean_batch.columns:
+            clean_batch['priority'] = 'LOW'
+        else:
+            clean_batch['priority'] = clean_batch['priority'].astype(str).str.upper()
+            clean_batch.loc[~clean_batch['priority'].isin(valid_priorities), 'priority'] = 'LOW'
         
         dropped = initial_len - len(clean_batch)
         if dropped > 0:
