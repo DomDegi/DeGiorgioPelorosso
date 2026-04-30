@@ -2,7 +2,7 @@ import pytest
 import pandas as pd
 import numpy as np
 from pandas.testing import assert_frame_equal
-from src.reader_0 import CSVTelemetryReader
+from src.reader import CSVTelemetryReader
 
 # ==========================================
 # FIXTURES
