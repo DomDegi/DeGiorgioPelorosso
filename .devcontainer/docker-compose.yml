@@ -3,8 +3,8 @@ version: '3.8'
 services:
   dev-env:
     build: .
-    # Questa riga è il trucco: collega la tua cartella locale dentro il container!
+    # Connect your local folder inside the container!
     volumes:
       - ../..:/workspace
-    # Tiene il container acceso in background così puoi entrarci e uscirci quando vuoi
+    # keep the container running in the background so you can enter and exit it whenever you want
     command: tail -f /dev/null
