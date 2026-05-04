@@ -22,3 +22,10 @@ RUN pip install pytest
 
 # Start a shell when the container runs
 CMD ["bash"]
+
+# Copy your actual application code into the container
+COPY . /workspace
+
+# Change this to whatever your main execution script is
+# This is what Slurm will run by default
+CMD ["python", "main.py"]
