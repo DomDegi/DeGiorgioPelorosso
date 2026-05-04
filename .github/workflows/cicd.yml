@@ -1,5 +1,9 @@
 name: Python CI/CD Pipeline
 
+# Future-proofing: Force all JavaScript actions to use Node.js 24
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 # 1. TRIGGERS
 on:
   push:
