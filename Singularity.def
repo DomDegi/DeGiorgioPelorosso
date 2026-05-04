@@ -1,0 +1,26 @@
+Bootstrap: docker
+From: python:3.10-slim
+
+%environment
+    export PYTHONDONTWRITEBYTECODE=1
+    export PYTHONUNBUFFERED=1
+
+%post
+    apt-get update && apt-get install -y git
+    # We install dependencies here
+    pip install --upgrade pip
+
+%files
+    # Copy requirements and your code
+    requirements.txt /workspace/requirements.txt
+    . /workspace
+
+%post
+    cd /workspace
+    pip install --no-cache-dir -r requirements.txt
+    pip install pytest
+
+%runscript
+    cd /workspace
+    # This executes when you do `singularity run`
+    exec python main.py
