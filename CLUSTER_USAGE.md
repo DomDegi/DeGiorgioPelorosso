@@ -33,3 +33,7 @@ To see files produced do:
 ```bash
 cat <FILE_NAME>
 ```
+To logout from the cluster do:
+```bash
+exit
+```
