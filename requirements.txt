@@ -1,6 +1,2 @@
-paho-mqtt==2.1.0
+-r requirements_prod.txt
 pytest==8.0.0
-numpy==1.26.4
-pandas==2.2.2
-pyyaml==6.0.1
-requests>=2.31.0

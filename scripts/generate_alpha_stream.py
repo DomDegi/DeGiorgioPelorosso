@@ -7,10 +7,10 @@ import time
 import random
 
 def generate_mission_dataset(sensors_path: str, rules_path: str, output_path: str, num_timestamps: int = 100_000):
-    print(f"🚀 Avvio generazione dati basata su {sensors_path} e {rules_path}...")
+    print(f"Start generation dataset based on {sensors_path} and {rules_path}...")
     start_time = time.perf_counter()
 
-    # 1. LEGGE I FILE DI CONFIGURAZIONE
+    # 1. READ CONFIG FILES
     with open(sensors_path, 'r') as f:
         yaml_data = yaml.safe_load(f)
         sensor_ids = [s['id'] for s in yaml_data['sensors']]
@@ -20,22 +20,22 @@ def generate_mission_dataset(sensors_path: str, rules_path: str, output_path: st
 
     num_sensors = len(sensor_ids)
     num_rows = num_timestamps * num_sensors
-    print(f"📡 Sensori trovati: {num_sensors}. Generazione di {num_rows:,} righe totali...")
+    print(f"Sensors found: {num_sensors}. Generating {num_rows:,} rows total...")
 
-    # 2. GENERAZIONE VETTORIALIZZATA (Veloce)
-    # Crea i timestamp (1 secondo di distanza)
+    # 2. VECTORIZED GENERATION (Fast)
+    # Create timestamps (1 second apart)
     start_date = pd.Timestamp("2026-05-01T00:00:00Z")
     date_range = pd.date_range(start_date, periods=num_timestamps, freq='S')
     
-    # Ripete ogni timestamp per il numero di sensori (DA-3: tutti i sensori misurano allo stesso istante)
+    # Repeat each timestamp for number of sensors (DA-3: all sensors measure at the same instant)
     timestamps_col = np.repeat(date_range, num_sensors)
     
-    # Cicla l'array dei sensori per ogni timestamp
+    # Cycle the sensor array for each timestamp
     sensors_col = np.tile(sensor_ids, num_timestamps)
     
-    # Genera priorità e valori base
+    # Generate priorities and base values
     priorities_col = np.random.choice(['HIGH', 'MEDIUM', 'LOW'], num_rows)
-    # Valori base attorno a 60 con deviazione standard di 15
+    # Base values around 60 with standard deviation of 15
     values_col = np.random.normal(loc=60.0, scale=15.0, size=num_rows)
 
     df = pd.DataFrame({
@@ -45,57 +45,59 @@ def generate_mission_dataset(sensors_path: str, rules_path: str, output_path: st
         'priority': priorities_col
     })
 
-    # 3. INIEZIONE MIRATA DI ANOMALIE (Basata su rules.json)
-    print("🎯 Iniezione di anomalie matematiche per attivare le regole...")
-    # Leggiamo alcune soglie dalle regole per forzare degli allarmi
+    # 3. INJECTION OF TARGETED ANOMALIES (Based on rules.json)
+    print("Injecting targeted anomalies...")
+    # Read some thresholds from the rules to force alarms
     for rule in rules:
         if rule['type'] in ['simple', 'stateful']:
             # Troviamo gli indici di questo sensore
+            # Find indices for this sensor
             target_sensor_idx = df[df['sensor_id'] == rule['sensor_id']].index
             
-            # Selezioniamo casualmente il 2% delle letture di questo sensore per farle sballare
+            # Randomly select 2% of this sensor's readings to corrupt
             anomaly_idx = np.random.choice(target_sensor_idx, size=int(len(target_sensor_idx) * 0.02), replace=False)
             
             # Applichiamo un valore che rompe la regola
+            # Apply a value that breaks the rule
             if rule['operator'] == '>':
-                df.loc[anomaly_idx, 'value'] = rule['value'] + 20.0 # Valore sopra la soglia
+                df.loc[anomaly_idx, 'value'] = rule['value'] + 20.0 # Value above the threshold
             elif rule['operator'] == '<':
-                df.loc[anomaly_idx, 'value'] = rule['value'] - 20.0 # Valore sotto la soglia
+                df.loc[anomaly_idx, 'value'] = rule['value'] - 20.0 # Value below the threshold
 
-    # 4. INIEZIONE DI ERRORI STRUTTURALI (Per testare il CorruptionCheck)
-    print("🦠 Iniezione di errori di formato (schema e tipo)...")
+    # 4. INJECTION OF STRUCTURAL ERRORS (To test CorruptionCheck)
+    print("🦠 Injecting format errors (schema and type)...")
     error_indices = np.random.choice(num_rows, size=5000, replace=False)
     
     for idx in error_indices:
         error_type = random.choice(['schema_missing', 'type_string'])
         if error_type == 'schema_missing':
-            df.loc[idx, 'priority'] = pd.NA  # Manca un campo
+            df.loc[idx, 'priority'] = pd.NA  # Missing a field
         else:
-            df.loc[idx, 'value'] = "GLITCH_OR_NIL" # Errore di tipo
+            df.loc[idx, 'value'] = "GLITCH_OR_NIL" # Type error
 
-    # 5. SALVATAGGIO
-    print("💾 Salvataggio dei dati su disco...")
+    # 5. SAVING
+    print("💾 Saving data to disk...")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     df.to_csv(output_path, index=False)
 
-    # 6. INIEZIONE DI PACKET CORROTTI A LIVELLO FISICO
-    print("💥 Aggiunta di stringhe CSV malformate alla fine del file...")
+    # 6. INJECTION OF CORRUPTED PHYSICAL PACKETS
+    print("💥 Appending malformed CSV strings to the end of the file...")
     with open(output_path, 'a') as f:
-        f.write('2026-05-01T23:59:58Z,TEMP-001,25.5\n') # Manca un campo intero (niente virgola)
-        f.write('2026-05-01T23:59:59Z,PRES-002,101.3,"HIGH\n') # Errore di parsing (virgolette non chiuse)
-        f.write('GARBAGE_NOISE_TRANSMISSION_LOST\n') # Spazzatura
+        f.write('2026-05-01T23:59:58Z,TEMP-001,25.5\n') # Missing priority (schema error)
+        f.write('2026-05-01T23:59:59Z,PRES-002,101.3,"HIGH\n') # Parsing error (unclosed quote)
+        f.write('GARBAGE_NOISE_TRANSMISSION_LOST\n') # Garbage
 
     end_time = time.perf_counter()
     file_size_mb = os.path.getsize(output_path) / (1024 * 1024)
     
     print("=========================================")
-    print("✅ DATASET DELLA MISSIONE PRONTO!")
-    print(f"Sensori       : {num_sensors}")
-    print(f"Timestamp Unici: {num_timestamps:,}")
-    print(f"Righe Totali  : {num_rows:,}")
-    print(f"Dimensione    : {file_size_mb:.2f} MB")
-    print(f"Tempo Gen.    : {end_time - start_time:.2f} sec")
-    print(f"Salvato in    : {output_path}")
+    print("MISSION DATASET READY!")
+    print(f"Sensors       : {num_sensors}")
+    print(f"Unique Timestamps: {num_timestamps:,}")
+    print(f"Total Rows    : {num_rows:,}")
+    print(f"Size          : {file_size_mb:.2f} MB")
+    print(f"Generation Time: {end_time - start_time:.2f} sec")
+    print(f"Saved to      : {output_path}")
     print("=========================================")
 
 if __name__ == "__main__":
@@ -103,5 +105,5 @@ if __name__ == "__main__":
         sensors_path="config/Current_sensors_sat_alpha.yaml",
         rules_path="config/Current_rules_sat_alpha.json",
         output_path="csv_input/export_sat_alpha_custom.csv",
-        num_timestamps=83334 # Circa 1 milione di righe totali (83334 * 12 sensori)
+        num_timestamps=83334 # About 1 million total rows (83334 * 12 sensors)
     )

@@ -27,7 +27,7 @@ jobs:
     - name: Download dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install -r requirements_prod.txt
 
     - name: Execute pytest
       run: |
@@ -62,7 +62,7 @@ jobs:
       with:
         # The context is the repository's root
         context: .
-        file: .devcontainer/Dockerfile
+        file: Dockerfile.prod
         push: true
         # env.OWNER_LC instead of github.repository_owner, the second could use uppercases causing error
         tags: ghcr.io/${{ env.OWNER_LC }}/astralog-hpc:latest

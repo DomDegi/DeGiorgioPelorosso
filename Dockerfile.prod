@@ -1,0 +1,21 @@
+FROM python:3.10-slim
+
+# Avoid creating .pyc files and ensure logs are printed to the terminal
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Setup a working directory inside the container
+WORKDIR /workspace
+
+# Copy ONLY the requirements file at the beginning (leverage Docker cache)
+COPY requirements_prod.txt .
+
+# Update pip and install dependencies cleanly
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements_prod.txt
+
+# Copy your actual application code into the container
+COPY . /workspace
+
+# This is what Singularity/Slurm will run by default
+CMD ["python", "main.py"]
