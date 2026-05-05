@@ -98,8 +98,7 @@ spacecraft_id: GEN-2415
         input_path=str(input_csv_path),
         output_path=str(output_dir), # Pass the folder, not a file, matching main.py logic
         rules_path=str(rules_path),
-        sensors_path=str(sensors_path),
-        mode="csv"
+        sensors_path=str(sensors_path)
     )
 
     # ==========================================
