@@ -11,7 +11,7 @@ WORKDIR /workspace
 RUN apt-get update && apt-get install -y git
 
 # Copy ONLY the requirements file at the beginning (leverage Docker cache)
-COPY requirements_dev.txt .
+COPY requirements*.txt .
 
 # Update pip and install dependencies
 RUN pip install --upgrade pip && \
