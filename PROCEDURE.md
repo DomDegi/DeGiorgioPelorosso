@@ -1,56 +1,54 @@
-# ASTRALOG-HPC CLUSTER OPERATING PROCEDURE
+# 🚀 AstraLog-HPC: Cluster Operating Procedure
 
-The container is static and clean. You only rebuild the container when Python code changes. For daily tests, you only swap the input files.
+This document outlines the "Gold Standard" HPC workflow used for this project. The architecture strictly separates the containerized code from the input data. 
 
-### PHASE 1: UPDATE CODE (Only when modifying .py files)
-1. [LOCAL] Edit `rules_engine.py`.
-2. [LOCAL] Commit and push to GitHub.
-3. [GITHUB] Wait for the CI/CD Action to finish building the Docker image.
-4. [GALILEO100] Delete the old container so the job script downloads the fresh one:
-   rm ~/astralog-hpc.sif
+Because CINECA Galileo100 compute nodes do not have internet access, we utilize a wrapper script (`submit.sh`) on the login node to pull the container from the GitHub Container Registry before submitting the job to the compute nodes via SLURM.
 
----
+### PHASE 1: UPLOAD DATA & CONFIGURATIONS
+Whenever you want to run a new experiment, you must upload your datasets and configuration files to the cluster. Run these commands from your **LOCAL** terminal:
 
-### PHASE 2: UPLOAD INPUTS (Every time you run a new experiment)
-Run these commands from your LOCAL terminal to push files to CINECA:
-
-# 1. Create the inputs folder if it doesn't exist
+```bash
+# 1. Create the required directories on the cluster
 ssh username@login.g100.cineca.it "mkdir -p ~/inputs ~/results"
 
-# 2. Upload Configs (YAML/JSON)
+# 2. Upload Configurations (YAML/JSON)
 scp config/Current_sensors_sat_alpha.yaml username@login.g100.cineca.it:~/inputs/
 scp config/Current_rules_sat_alpha.json username@login.g100.cineca.it:~/inputs/
 
 # 3. Upload Telemetry Data (CSV)
-scp csv_input/export_sat_alpha_custom.csv username@login.g100.cineca.it:~/inputs/
+scp csv_input/export_sat_alpha_custom_no_corruption.csv username@login.g100.cineca.it:~/inputs/
 
-# 4. Upload the Master Job Script
-scp job.sh username@login.g100.cineca.it:~/
+# 4. Upload the Job & Submit Scripts
+scp job.sh submit.sh username@login.g100.cineca.it:~/
+```
 
----
+### PHASE 2: EXECUTE THE JOB
+SSH into the CINECA login node: `ssh username@login.g100.cineca.it`
 
-### PHASE 3: EXECUTE THE JOB
-If you want to change the target CSV or config files without uploading a new job.sh, simply edit the variables at the top of `job.sh` using `nano job.sh`.
+If you want to change the target CSV or config files, simply edit the variables at the top of `job.sh` using `nano job.sh`.
 
-1. [CINECA] Submit the job to the Slurm workload manager:
-   sbatch job.sh
+1. **Make the wrapper script executable (First time only):**
+   ```bash
+   chmod +x submit.sh
+   ```
 
-2. [CINECA] Check the status of your job:
+2. **Execute the wrapper script:**
+   This will download the latest container from GHCR and automatically submit the `job.sh` script to the SLURM queue.
+   ```bash
+   ./submit.sh
+   ```
+3. **Monitor the job:**
+   ```bash
    squeue -u username
+   
+### PHASE 3: DOWNLOAD RESULTS
+Once the job finishes, pull the generated data back to your local machine. Run this from your **LOCAL** terminal:
 
-3. [CINECA] View the live terminal output:
-   cat astralog_output.txt
-   cat astralog_error.txt
-
----
-
-### PHASE 4: DOWNLOAD RESULTS
-Once the job finishes, pull the generated data back to your local machine.
-Run this from your LOCAL terminal:
-
-# Download the entire results folder (use StrictHostKeyChecking=no to bypass load balancer warnings)
+```bash
+# Download the entire results folder (use StrictHostKeyChecking=no to bypass load balancer SSH warnings)
 scp -o StrictHostKeyChecking=no -r username@login.g100.cineca.it:~/results ./
 
-# (Optional) Download the logs
+# Download the execution logs
 scp -o StrictHostKeyChecking=no username@login.g100.cineca.it:~/astralog_output.txt ./
 scp -o StrictHostKeyChecking=no username@login.g100.cineca.it:~/astralog_error.txt ./
+```

@@ -15,13 +15,6 @@ echo "Starting AstroLog job on Galileo100 from HOME directory..."
 module load singularity
 
 IMAGE_NAME="astralog-hpc.sif"
-IMAGE_URL="docker://ghcr.io/domdegi/astralog-hpc:latest"
-
-# 1. Pull the image if missing
-if [ ! -f "$IMAGE_NAME" ]; then
-    echo "Pulling from $IMAGE_URL..."
-    singularity pull $IMAGE_NAME $IMAGE_URL
-fi
 
 # 2. Create local directories to prevent Singularity mount crashes
 mkdir -p $HOME/inputs

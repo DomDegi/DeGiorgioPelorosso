@@ -97,6 +97,13 @@ Our project utilizes a modern, zero-touch CI/CD pipeline built on **GitHub Actio
 3. **Registry Publication:** The image is pushed to the GitHub Container Registry (GHCR).
 4. **HPC Execution:** On the CINECA Galileo100 supercomputer, our `job.sh` Slurm script utilizes **Singularity (Apptainer)** to pull the latest image directly from GHCR (`singularity pull docker://ghcr.io/...`). The container is completely stateless; the input datasets and configurations are injected via bind mounts (`--bind`) at runtime.
 
+### HPC Execution Strategy & Network Workarounds
+On the CINECA Galileo100 supercomputer, our `job.sh` Slurm script utilizes **Singularity (Apptainer)** to execute the container. 
+
+Because HPC compute nodes do not have internet access, they cannot pull Docker images from GHCR directly. To solve this, we implemented a wrapper script (`submit.sh`). This script runs on the internet-connected login node to pull the latest image (`singularity pull docker://ghcr.io/...`) and then automatically submits the `job.sh` script to the compute queue.
+
+The container is completely stateless; the input datasets and configurations are injected into the environment via bind mounts (`--bind`) at runtime.
+
 ---
 
 ## 🖥️ Cluster Operating Procedure
