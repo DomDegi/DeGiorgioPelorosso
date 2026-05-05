@@ -6,20 +6,19 @@ import logging
 # Assuming the provided abstract classes are saved in 'interfaces.py'
 from src.interfaces import ITelemetryReader, IRulesEngine, IOutputWriter, IStateMemory
 
-# 2. Import the Concrete Implementations from your existing files
-from src.reader import CSVTelemetryReader, StreamTelemetryReader
+# 2. Import Concrete Implementations
+from src.reader import CSVTelemetryReader
 from src.rules_engine import PandasRulesEngine
 from src.writer import CSVOutputWriter
 from src.state_memory import DictStateMemory
 
 logger = logging.getLogger(__name__)
 
-def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path: str, sensors_path: str, mode: str = 'csv') -> None:
+def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path: str, sensors_path: str) -> None:
     """
     Main orchestration loop that ties the system components together.
     It relies entirely on interfaces to interact with the underlying components.
     """
-    
     logger.info("AstraLog-HPC Orchestrator Started")
     
     # ---------------------------------------------------------
@@ -41,8 +40,7 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
         logger.warning(f"Requested batch_size ({batch_size}) splits timestamps. Auto-adjusting to safe multiple: {safe_batch_size}")
         batch_size = safe_batch_size
     # ---------------------------------------------------------
-
-    logger.info(f"Configuration loaded -> Mode: {mode.upper()} | Batch Size: {batch_size} | Input: {input_path} | Output: {output_path}")   
+    logger.info(f"Configuration loaded -> Batch Size: {batch_size} | Input: {input_path} | Output: {output_path}")
 
     # --- COMPONENT INSTANTIATION ---
     # Here we instantiate the concrete classes, but we type-hint them 
@@ -50,33 +48,24 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
     # ITelemetryReader reader = new CSVTelemetryReader(input_path);
     memory: IStateMemory = DictStateMemory()
     
-    if mode == 'stream':
-        reader: ITelemetryReader = StreamTelemetryReader(sensors_yaml_path=sensors_path, directory_path="output_collector")
-    else:
-        reader: ITelemetryReader = CSVTelemetryReader(sensors_yaml_path=sensors_path, csv_path=input_path)
-        
+    reader: ITelemetryReader = CSVTelemetryReader(sensors_yaml_path=sensors_path, csv_path=input_path)
     rules_engine: IRulesEngine = PandasRulesEngine(rules_json_path=rules_path, memory=memory)
     writer: IOutputWriter = CSVOutputWriter(output_path=output_path, clean_start=True)
-
+    
     batch_counter = 0
     total_alarms = 0
-
+    
     # --- MAIN ORCHESTRATION LOOP ---
     while True:
         # 1. Extract the next batch of telemetry
         # The reader converts a physical chunk into a logical DataFrame batch
         telemetry_batch: pd.DataFrame = reader.extract_batch(batch_size)
-
-        # Check for End of File (EOF)
+        
+        # An empty batch means we hit the bottom of the file
         if telemetry_batch.empty:
-            if mode == 'stream':
-                # Don't break! Just loop back around and wait for the collector to download more files.
-                continue 
-            else:
-                # In CSV mode, an empty batch truly means we hit the bottom of the file.
-                logger.info("EOF reached. No more telemetry to process.")
-                break
-
+            logger.info("EOF reached. No more telemetry to process.")
+            break
+            
         batch_counter += 1
  
         # 2. Evaluate business logic

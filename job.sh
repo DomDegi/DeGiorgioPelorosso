@@ -12,30 +12,44 @@
 
 echo "Starting AstroLog job on Galileo100 from HOME directory..."
 
-# Load Singularity module (Galileo100 supports this alias for Apptainer)
 module load singularity
 
-# Define the image name and the GHCR registry URL
 IMAGE_NAME="astralog-hpc.sif"
-# IMPORTANT: Replace YOUR_GITHUB_USERNAME with your actual lowercase GitHub username
-IMAGE_URL="docker://ghcr.io/YOUR_GITHUB_USERNAME/astralog-hpc:latest"
+IMAGE_URL="docker://ghcr.io/domdegi/astralog-hpc:latest"
 
-# 1. SETUP: Check if the image exists, pull it if it doesn't
+# 1. Pull the image if missing
 if [ ! -f "$IMAGE_NAME" ]; then
-    echo "Image '$IMAGE_NAME' not found in the current directory."
     echo "Pulling from $IMAGE_URL..."
     singularity pull $IMAGE_NAME $IMAGE_URL
-else
-    echo "Image '$IMAGE_NAME' already exists. Skipping download."
 fi
 
-# 2. SETUP: Ensure the host output directory exists before binding it
-# If the directory doesn't exist, Singularity will throw a mount error
+# 2. Create local directories to prevent Singularity mount crashes
+mkdir -p $HOME/inputs
 mkdir -p $HOME/results
 
-# 3. EXECUTE: Run the container
-# We tell python to run the script that is permanently baked into the container's /workspace
+# =================================================================
+# MASTER CONTROL PANEL
+# Define exactly which files you want to analyze today!
+# (Make sure these 3 files are actually uploaded into your $HOME/inputs folder on Galileo100)
+# =================================================================
+DATA_CSV="export_sat_alpha_custom.csv"
+CONFIG_RULES="Current_rules_sat_alpha.json"
+CONFIG_SENSORS="Current_sensors_sat_alpha.yaml"
+BATCH_SIZE=10000
+
+# 3. Execute the container, passing all dynamic arguments
 echo "Executing the main script inside the container..."
-singularity exec --pwd /workspace --bind $HOME/results:/workspace/output $IMAGE_NAME python -m src.main --batch_size 10000
+
+singularity exec \
+  --pwd /workspace \
+  --bind $HOME/inputs:/workspace/inputs \
+  --bind $HOME/results:/workspace/output \
+  $IMAGE_NAME \
+  python -m src.main \
+    --batch_size $BATCH_SIZE \
+    --input_path /workspace/inputs/$DATA_CSV \
+    --output_path /workspace/output \
+    --rules_path /workspace/inputs/$CONFIG_RULES \
+    --sensors_path /workspace/inputs/$CONFIG_SENSORS
 
 echo "Job finished."
