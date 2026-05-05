@@ -29,5 +29,4 @@ job.sh
 .dockerignore
 Dockerfile.prod
 Singularity.def
-requirements_prod.txt
 
