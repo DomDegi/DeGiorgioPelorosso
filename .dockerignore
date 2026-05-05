@@ -5,7 +5,7 @@
 
 # Local development folder
 .devcontainer/
-requirements.txt
+requirements_dev.txt
 
 # Cache Python and Pytest
 __pycache__/

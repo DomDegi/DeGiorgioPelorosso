@@ -72,7 +72,7 @@ This project is licensed under the **MIT License**. See the `LICENSE` file for m
 │   ├── export_sat_alpha_large.csv  
 │   ├── export_sat_alpha_medium.csv
 │   └── export_sat_alpha_small.csv
-├── requirements.txt           # Python dependencies (paho-mqtt, pytest)
+├── requirements_dev.txt           # Python dependencies (paho-mqtt, pytest)
 ├── src/
 │   ├── astralog_collector.py  # Core ingestion & ESA validation logic
 │   └── __init__.py
@@ -104,7 +104,7 @@ The system supports two **Batch Accumulation Strategies**:
 #### 1. Installation
 Install the required dependencies:
 ```bash
-pip install -r requirements.txt
+pip install -r requirements_dev.txt
 ```
 
 #### 2. Running the Collector

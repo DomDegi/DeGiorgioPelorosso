@@ -11,11 +11,11 @@ WORKDIR /workspace
 RUN apt-get update && apt-get install -y git
 
 # Copy ONLY the requirements file at the beginning (leverage Docker cache)
-COPY requirements.txt .
+COPY requirements_dev.txt .
 
 # Update pip and install dependencies
 RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements_dev.txt
 
 # (Optional) Install additional tools for debugging that might not be in the txt
 RUN pip install pytest

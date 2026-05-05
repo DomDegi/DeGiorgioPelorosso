@@ -23,5 +23,5 @@
   "remoteEnv": {
     "SSH_AUTH_SOCK": "/ssh-agent"
   },
-  "postStartCommand": "if [ -f /workspace/requirements.txt ]; then pip install -r /workspace/requirements.txt; fi"
+  "postStartCommand": "if [ -f /workspace/requirements_dev.txt ]; then pip install -r /workspace/requirements_dev.txt; fi"
 }
