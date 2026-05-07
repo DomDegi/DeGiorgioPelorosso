@@ -1,4 +1,4 @@
-import pandas as pd
+import polars as pl
 import yaml
 import logging
 
@@ -8,7 +8,7 @@ from src.interfaces import ITelemetryReader, IRulesEngine, IOutputWriter, IState
 
 # 2. Import Concrete Implementations
 from src.reader import CSVTelemetryReader
-from src.rules_engine import PandasRulesEngine
+from src.rules_engine import PolarsRulesEngine
 from src.writer import CSVOutputWriter
 from src.state_memory import DictStateMemory
 
@@ -49,7 +49,7 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
     memory: IStateMemory = DictStateMemory()
     
     reader: ITelemetryReader = CSVTelemetryReader(sensors_yaml_path=sensors_path, csv_path=input_path)
-    rules_engine: IRulesEngine = PandasRulesEngine(rules_json_path=rules_path, memory=memory)
+    rules_engine: IRulesEngine = PolarsRulesEngine(rules_path=rules_path)
     writer: IOutputWriter = CSVOutputWriter(output_path=output_path, clean_start=True)
     
     batch_counter = 0
@@ -59,10 +59,10 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
     while True:
         # 1. Extract the next batch of telemetry
         # The reader converts a physical chunk into a logical DataFrame batch
-        telemetry_batch: pd.DataFrame = reader.extract_batch(batch_size)
+        telemetry_batch: pl.DataFrame = reader.extract_batch(batch_size)
         
         # An empty batch means we hit the bottom of the file
-        if telemetry_batch.empty:
+        if telemetry_batch.height == 0:
             logger.info("EOF reached. No more telemetry to process.")
             break
             
@@ -71,16 +71,16 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
         # 2. Evaluate business logic
         # The Rules Engine separates nominal data from anomalies
         valid_telemetry, alarm_telemetry = rules_engine.evaluate_rules(telemetry_batch)
-        total_alarms += len(alarm_telemetry)
+        total_alarms += alarm_telemetry.height
 
-        logger.info(f"Processing Batch #{batch_counter} | Rows: {len(telemetry_batch)} | Alarms Found: {len(alarm_telemetry)}")
+        logger.info(f"Processing Batch #{batch_counter} | Rows: {telemetry_batch.height} | Alarms Found: {alarm_telemetry.height}")
 
         # 3. Write outputs
         # The Writer handles the physical I/O chunking to the disk
-        if not valid_telemetry.empty:
+        if valid_telemetry.height > 0:
             writer.write_valid_batch(valid_telemetry)
 
-        if not alarm_telemetry.empty:
+        if alarm_telemetry.height > 0:
             writer.write_alarms_batch(alarm_telemetry)
 
     logger.info("AstraLog-HPC Orchestrator Finished")

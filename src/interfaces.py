@@ -12,8 +12,7 @@ Differentiation of the used terminology:
 
 from abc import ABC, abstractmethod
 from typing import Tuple,Optional
-import pandas as pd
-
+import polars as pl
 
 class ITelemetryReader(ABC):
     """
@@ -27,7 +26,7 @@ class ITelemetryReader(ABC):
     - Interfaced with: `BatchOrchestrator` (calls this to get the next block of work).
     """
     @abstractmethod
-    def extract_batch(self, batch_size: int) -> pd.DataFrame:
+    def extract_batch(self, batch_size: int) -> pl.DataFrame:
         """
         Extracts the next physical 'chunk' of data from the source, sanitizes it, 
         and returns it as a logical 'batch' of clean telemetry.
@@ -36,7 +35,7 @@ class ITelemetryReader(ABC):
             batch_size (int): The maximum number of rows to read to prevent HPC memory overflow.
             
         Returns:
-            pd.DataFrame: A batch of clean, validated telemetry ready for rule evaluation. 
+            pl.DataFrame: A batch of clean, validated telemetry ready for rule evaluation. 
                           Returns an empty DataFrame on EOF.
         """
         pass
@@ -54,15 +53,15 @@ class IRulesEngine(ABC):
     """
     
     @abstractmethod
-    def evaluate_rules(self, telemetry_batch: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def evaluate_rules(self, telemetry_batch: pl.DataFrame) -> Tuple[pl.DataFrame, pl.DataFrame]:
         """
         Evaluates a batch of raw telemetry against the project rules (Simple, Stateful, etc.).
         
         Args:
-            telemetry_batch (pd.DataFrame): The raw batch extracted by the Reader.
+            telemetry_batch (pl.DataFrame): The raw batch extracted by the Reader.
             
         Returns:
-            Tuple[pd.DataFrame, pd.DataFrame]: A tuple containing two separated DataFrames:
+            Tuple[pl.DataFrame, pl.DataFrame]: A tuple containing two separated DataFrames:
                 [0] valid_telemetry: Rows that triggered no alarms (Nominal/Valid).
                 [1] alarm_telemetry: Rows that breached thresholds (Anomalies).
         """
@@ -114,7 +113,7 @@ class IOutputWriter(ABC):
     """
     
     @abstractmethod
-    def write_valid_batch(self, valid_telemetry: pd.DataFrame) -> None:
+    def write_valid_batch(self, valid_telemetry: pl.DataFrame) -> None:
         """
         Takes the logical batch of valid telemetry and appends it as a physical 
         chunk to the target storage (e.g., 'valid_data.csv').
@@ -122,7 +121,7 @@ class IOutputWriter(ABC):
         pass
 
     @abstractmethod
-    def write_alarms_batch(self, alarm_telemetry: pd.DataFrame) -> None:
+    def write_alarms_batch(self, alarm_telemetry: pl.DataFrame) -> None:
         """
         Takes the logical batch of anomalies and appends it as a physical 
         chunk to the target storage (e.g., 'alarms.log').
