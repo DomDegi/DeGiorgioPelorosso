@@ -25,12 +25,8 @@ build/
 *.swp
 .DS_Store (for Mac users)
 
-# Documents and UMLs
-docs/
-
 # Ignores telemetry data which are too big
-csv_input/*large*.csv
-csv_input/*medium*.csv
+csv_input/export_100X.csv
 
 # Ignores local output directory
 output/
