@@ -1,0 +1,65 @@
+@startuml
+skinparam monochrome true
+skinparam DefaultFontName Arial
+skinparam classAttributeIconSize 0
+
+title Class Diagram: AstraLog-HPC (Batch Processing Architecture)
+
+class BatchOrchestrator {
+    - reader : TelemetryReader
+    - engine : RulesEngine
+    - writer : OutputWriter
+    + __init__(reader: TelemetryReader, engine: RulesEngine, writer: OutputWriter)
+    + run_batch_job(stream_path: str, batch_size: int) : void
+}
+
+class TelemetryReader {
+    - sensors_config : dict
+    - stream_file_path : str
+    + __init__(sensors_yaml_path: str)
+    + extract_batch(batch_size: int) : DataFrame
+}
+
+class RulesEngine {
+    - rules_config : dict
+    - state_memory : StateMemory
+    + __init__(rules_json_path: str)
+    + evaluate_rules(chunk: DataFrame) : Tuple<DataFrame, DataFrame>
+    - evaluate_simple_condition(chunk: DataFrame, rule: dict) : DataFrame
+    - evaluate_stateful_condition(chunk: DataFrame, rule: dict) : DataFrame
+}
+
+class StateMemory {
+    - consecutive_counts : dict
+    + __init__()
+    + increment_consecutive_count(rule_id: str, sensor_id: str) : int
+    + reset_consecutive_count(rule_id: str, sensor_id: str) : void
+    + get_current_count(rule_id: str, sensor_id: str) : int
+}
+
+class OutputWriter {
+    - valid_output_path : str
+    - alarms_output_path : str
+    + __init__(valid_csv: str, alarms_log: str)
+    + write_valid_chunk(valid_data: DataFrame) : void
+    + write_alarms_chunk(alarm_data: DataFrame) : void
+}
+
+' Define Relationships
+BatchOrchestrator --> TelemetryReader : Uses
+BatchOrchestrator --> RulesEngine : Uses
+BatchOrchestrator --> OutputWriter : Uses
+RulesEngine --> StateMemory : Uses
+
+note right of BatchOrchestrator
+  Acts as the main entry point (job.sh).
+  Loops through the CSV until EOF.
+end note
+
+note right of RulesEngine
+  Returns a Tuple containing:
+  [0] Valid DataFrame
+  [1] Alarms DataFrame
+end note
+
+@enduml
