@@ -1,9 +1,5 @@
 name: Python CI/CD Pipeline
 
-# Future-proofing: Force all JavaScript actions to use Node.js 24
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 # 1. TRIGGERS
 on:
   push:
@@ -17,10 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5   
 
     - name: Setup Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6 
       with:
         python-version: '3.10' 
 
@@ -44,10 +40,10 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5 
 
     - name: Log in to GitHub Container Registry
-      uses: docker/login-action@v3
+      uses: docker/login-action@v4 
       with:
         registry: ghcr.io
         username: ${{ github.actor }}
@@ -58,7 +54,7 @@ jobs:
         echo "OWNER_LC=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
     - name: Build and push Docker image
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v6 
       with:
         # The context is the repository's root
         context: .
