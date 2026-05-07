@@ -1,0 +1,11 @@
+sensors:
+- id: S1
+  sampling_rate: 1Hz
+  unit: V
+- id: S2
+  sampling_rate: 1Hz
+  unit: A
+- id: S3
+  sampling_rate: 1Hz
+  unit: C
+spacecraft_id: TEST-001

@@ -1,0 +1,7 @@
+[
+    { "rule_id": "R1", "type": "simple", "sensor_id": "S1", "operator": ">", "value": 10.0, "priority": "LOW" },
+    { "rule_id": "R2", "type": "stateful", "sensor_id": "S2", "operator": "<", "value": 5.0, "priority": "MEDIUM", "consecutive_measurements": 3 },
+    { "rule_id": "R3", "type": "step_difference", "sensor_id": "S1", "operator": ">", "value": 2.0, "priority": "HIGH" },
+    { "rule_id": "R4", "type": "simple", "sensor_id": "S3", "operator": "==", "value": 1.0, "priority": "LOW" },
+    { "rule_id": "R5", "type": "correlation", "conditions": ["R1", "R4"], "logic": "AND", "priority": "CRITICAL" }
+]
