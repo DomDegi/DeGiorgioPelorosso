@@ -5,8 +5,8 @@ print("Lettura dei file in corso...")
 # I file log non hanno intestazione, quindi assegniamo i nomi manualmente
 col_names = ["timestamp", "rule_id", "priority", "sensor_id", "value"]
 
-df_pd = pl.read_csv("output/alarms_custom_pd.log", separator=";", has_header=False, new_columns=col_names)
-df_pl = pl.read_csv("output/alarms_custom_pl.log", separator=";", has_header=False, new_columns=col_names)
+df_pd = pl.read_csv("alarms_custom_pd.log", separator=";", has_header=False, new_columns=col_names)
+df_pl = pl.read_csv("alarms_custom_pl.log", separator=";", has_header=False, new_columns=col_names)
 
 # 2. Rimuoviamo eventuali duplicati identici
 df_pd_unique = df_pd.unique(subset=['timestamp', 'rule_id', 'sensor_id'])
