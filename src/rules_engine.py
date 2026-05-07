@@ -39,7 +39,8 @@ class PolarsRulesEngine(IRulesEngine):
                     alarm_df = triggered.with_columns(
                         pl.lit(rule['rule_id']).alias('rule_id'),
                         pl.lit(rule['priority']).alias('priority')
-                    )
+                    ).select(["timestamp", "rule_id", "sensor_id", "value", "priority"]) # AGGIUNGI QUESTO SELECT
+                    
                     alarms_list.append(alarm_df)
 
         # ==========================================
@@ -68,12 +69,12 @@ class PolarsRulesEngine(IRulesEngine):
                      if new_streak >= rule['consecutive_measurements']:
                          state_alarms.append(self._create_alarm_dict(row, rule))
                          
-        # LA SVISTA CORRETTA: Aggiungiamo i risultati della Fase 2 alla lista principale
         if state_alarms:
-            alarms_list.append(pl.DataFrame(state_alarms))
-
+            state_df = pl.DataFrame(state_alarms).select(["timestamp", "rule_id", "sensor_id", "value", "priority"])
+            alarms_list.append(state_df)
+            
         # ==========================================
-        # PHASE 3: Combinazione e Separazione
+        # PHASE 3: Combination & Separation of Alarms
         # ==========================================
         if not alarms_list:
             return batch, pl.DataFrame()
