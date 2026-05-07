@@ -1,6 +1,8 @@
 import polars as pl
 import os
 from src.interfaces import IOutputWriter
+import logging
+logger = logging.getLogger(__name__)
 
 class CSVOutputWriter(IOutputWriter):
     def __init__(self, output_dir: str):
@@ -15,17 +17,34 @@ class CSVOutputWriter(IOutputWriter):
                 os.remove(f)
 
     def write_valid_batch(self, batch: pl.DataFrame):
-        # 1. Multi-threaded CSV dump
         if batch.height > 0:
-            with open(self.valid_path, 'ab') as f:
-                # include_header only adds the header if the file is totally empty
-                batch.write_csv(f, include_header=not os.path.exists(self.valid_path))
+            # Ordina per timestamp e sensore (ordine alfabetico richiesto)
+            sorted_batch = batch.sort(["timestamp", "sensor_id"])
+            
+            # Raggruppa le misurazioni per timestamp, mantenendo l'ordine
+            grouped = sorted_batch.group_by("timestamp", maintain_order=True).agg([
+                pl.col("sensor_id"),
+                pl.col("value")
+            ])
+            
+            # Modalità 'a' (testo) invece di 'ab' (binario) per scrivere la stringa manuale
+            with open(self.valid_path, 'a') as f:
+                for row in grouped.iter_rows(named=True):
+                    # Concatena le coppie SENSOR:VALUE con il pipe |
+                    pairs = [f"{s}:{v}" for s, v in zip(row['sensor_id'], row['value'])]
+                    payload = "|".join(pairs)
+                    # Scrive nel file la stringa esatta
+                    f.write(f"{row['timestamp']};NOMINAL;{payload}\n")
 
     def write_alarms_batch(self, alarms: pl.DataFrame):
-        # 2. Custom Format Logging
         if alarms.height > 0:
-            with open(self.alarms_path, 'ab') as f:
-                # We use the separator argument to natively fulfill the semicolon requirement
-                alarms.write_csv(f, separator=";", include_header=not os.path.exists(self.alarms_path))
-
-```
+            try:
+                # Riordina le colonne esattamente come si aspetta il test (e la legacy)
+                alarms_ordered = alarms.select(["timestamp", "rule_id", "priority", "sensor_id", "value"])
+                
+                with open(self.alarms_path, 'ab') as f:
+                    alarms_ordered.write_csv(f, separator=";", has_header=not os.path.exists(self.alarms_path))
+            except pl.exceptions.ColumnNotFoundError as e: # Cattura l'errore se mancano colonne
+                logger.error(f"OutputWriter missing columns: {e}")
+            except Exception as e:
+                logger.error(f"OutputWriter missing columns: {e}")

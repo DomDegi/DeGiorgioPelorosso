@@ -14,17 +14,17 @@ class CSVTelemetryReader(ITelemetryReader):
         # We define types upfront so Polars can enforce them at the Rust level 
         # during the disk read, completely avoiding slow Python 'isinstance' checks.
         self.schema = {
-            "timestamp": pl.String,
-            "sensor_id": pl.String,
+            "timestamp": pl.Utf8,   
+            "sensor_id": pl.Utf8, 
             "value": pl.Float64,
-            "priority": pl.String
+            "priority": pl.Utf8      
         }
         
         # 2. Initialize Batched Reader
         # ignore_errors=True silently skips rows with corrupted extra commas or missing columns.
         self._batched_reader = pl.read_csv_batched(
             self.csv_path,
-            schema_overrides=self.schema,
+            dtypes=self.schema,  
             ignore_errors=True,
             null_values=["", "NA", "NaN", "null"]
         )

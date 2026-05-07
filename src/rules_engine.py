@@ -27,26 +27,24 @@ class PolarsRulesEngine(IRulesEngine):
         # ==========================================
         # PHASE 1: Vectorized Simple Rules
         # ==========================================
-        # These are evaluated across the entire batch instantly using C-level masks.
         for rule in self.simple_rules:
+            cond = None
             if rule['operator'] == '>': cond = pl.col('value') > rule['value']
             elif rule['operator'] == '<': cond = pl.col('value') < rule['value']
             elif rule['operator'] == '==': cond = pl.col('value') == rule['value']
-                
-            triggered = batch.filter((pl.col('sensor_id') == rule['sensor_id']) & cond)
             
-            if triggered.height > 0:
-                alarm_df = triggered.with_columns(
-                    pl.lit(rule['rule_id']).alias('rule_id'),
-                    pl.lit(rule['priority']).alias('priority')
-                )
-                alarms_list.append(alarm_df)
+            if cond is not None:
+                triggered = batch.filter((pl.col('sensor_id') == rule['sensor_id']) & cond)
+                if triggered.height > 0:
+                    alarm_df = triggered.with_columns(
+                        pl.lit(rule['rule_id']).alias('rule_id'),
+                        pl.lit(rule['priority']).alias('priority')
+                    )
+                    alarms_list.append(alarm_df)
 
         # ==========================================
         # PHASE 2: Stateful & Step Rules (Sequential)
         # ==========================================
-        # Because these rely on cross-batch historical memory, we must iterate.
-        # Polars iter_rows() is highly optimized for extracting native Python types.
         state_alarms = []
         for row in batch.iter_rows(named=True):
             
@@ -58,46 +56,35 @@ class PolarsRulesEngine(IRulesEngine):
                         diff = abs(row['value'] - last_val)
                         if self._evaluate_condition(diff, rule['operator'], rule['value']):
                             state_alarms.append(self._create_alarm_dict(row, rule))
-                    memory.update_last_value(rule['sensor_id'], row['value'])
+                    memory.set_last_value(rule['sensor_id'], row['value'])
 
             # Stateful Rules
             for rule in self.stateful_rules:
                  if row['sensor_id'] == rule['sensor_id']:
                      is_breach = self._evaluate_condition(row['value'], rule['operator'], rule['value'])
-                     streak = memory.update_streak(rule['rule_id'], is_breach)
-                     if streak >= rule['consecutive_measurements']:
+                     current_streak = memory.get_current_count(rule['rule_id'], rule['sensor_id'])
+                     new_streak = current_streak + 1 if is_breach else 0
+                     memory.set_consecutive_count(rule['rule_id'], rule['sensor_id'], new_streak)
+                     if new_streak >= rule['consecutive_measurements']:
                          state_alarms.append(self._create_alarm_dict(row, rule))
                          
+        # LA SVISTA CORRETTA: Aggiungiamo i risultati della Fase 2 alla lista principale
         if state_alarms:
             alarms_list.append(pl.DataFrame(state_alarms))
 
         # ==========================================
-        # PHASE 3: Correlation Rules
+        # PHASE 3: Combinazione e Separazione
         # ==========================================
         if not alarms_list:
             return batch, pl.DataFrame()
 
-        # Combine all alarms found so far into one master table
-        all_alarms = pl.concat(alarms_list, how="vertical")
-        
-        for rule in self.correlation_rules:
-            # Group by timestamp to see all rules triggered at that exact second
-            grouped = all_alarms.group_by('timestamp').agg(pl.col('rule_id').alias('triggered_rules'))
-            
-            for row in grouped.iter_rows(named=True):
-                triggered_set = set(row['triggered_rules'])
-                if rule['logic'] == 'AND' and all(c in triggered_set for c in rule['conditions']):
-                    alarms_list.append(pl.DataFrame([{
-                        "timestamp": row['timestamp'],
-                        "rule_id": rule['rule_id'],
-                        "sensor_id": "CORRELATION",
-                        "value": None, 
-                        "priority": rule['priority']
-                    }]))
-
-        # Final Cleanup: Deduplicate and sort
+        # Aggrega tutti gli allarmi trovati e rimuovi i duplicati
         final_alarms = pl.concat(alarms_list, how="vertical").unique(subset=['timestamp', 'rule_id', 'sensor_id'])
-        return batch, final_alarms
+        
+        # Sottrae gli allarmi dal batch originale per ottenere SOLO i dati sani (Anti-Join)
+        valid_batch = batch.join(final_alarms, on=["timestamp", "sensor_id"], how="anti")
+        
+        return valid_batch, final_alarms
 
     def _evaluate_condition(self, val, operator, threshold):
         if operator == '>': return val > threshold

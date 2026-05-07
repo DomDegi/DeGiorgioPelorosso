@@ -50,7 +50,7 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
     
     reader: ITelemetryReader = CSVTelemetryReader(sensors_yaml_path=sensors_path, csv_path=input_path)
     rules_engine: IRulesEngine = PolarsRulesEngine(rules_path=rules_path)
-    writer: IOutputWriter = CSVOutputWriter(output_path=output_path, clean_start=True)
+    writer: IOutputWriter = CSVOutputWriter(output_dir=output_path)
     
     batch_counter = 0
     total_alarms = 0
@@ -70,7 +70,7 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
  
         # 2. Evaluate business logic
         # The Rules Engine separates nominal data from anomalies
-        valid_telemetry, alarm_telemetry = rules_engine.evaluate_rules(telemetry_batch)
+        valid_telemetry, alarm_telemetry = rules_engine.evaluate_rules(telemetry_batch, memory)
         total_alarms += alarm_telemetry.height
 
         logger.info(f"Processing Batch #{batch_counter} | Rows: {telemetry_batch.height} | Alarms Found: {alarm_telemetry.height}")
