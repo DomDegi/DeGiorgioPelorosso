@@ -7,95 +7,193 @@ from src.interfaces import IRulesEngine, IStateMemory
 logger = logging.getLogger(__name__)
 
 class PolarsRulesEngine(IRulesEngine):
-    def __init__(self, rules_path: str):
-        with open(rules_path, 'r') as f:
-            self.rules = json.load(f)
+    def __init__(self, rules_json_path: str, memory: IStateMemory):
+        self.rules = self._load_rules(rules_json_path)
+        self.memory = memory
+        self._sort_rules_by_priority()
+
+    def _load_rules(self, path: str) -> list:
+        with open(path, 'r') as f:
+            raw_rules = json.load(f)
             
-        # 1. Pre-categorize rules 
-        # Separating them prevents us from checking the 'type' string on every single row.
-        self.simple_rules = [r for r in self.rules if r['type'] == 'simple']
-        self.step_rules = [r for r in self.rules if r['type'] == 'step_difference']
-        self.stateful_rules = [r for r in self.rules if r['type'] == 'stateful']
-        self.correlation_rules = [r for r in self.rules if r['type'] == 'correlation']
+        valid_priorities = {"LOW", "MEDIUM", "HIGH"}
+        sanitized = []
+        for r in raw_rules:
+            priority = r.get('priority', 'LOW').upper()
+            if priority in valid_priorities:
+                r['priority'] = priority
+                sanitized.append(r)
+        return sanitized
 
-    def evaluate_rules(self, batch: pl.DataFrame, memory: IStateMemory) -> Tuple[pl.DataFrame, pl.DataFrame]:
-        if batch.height == 0:
-            return batch, pl.DataFrame()
+    def _sort_rules_by_priority(self) -> None:
+        prio_map = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
+        self.rules.sort(key=lambda r: prio_map.get(r.get('priority', 'LOW'), 1), reverse=True)
 
+    def _get_op_expr(self, col_name: str, operator: str, value: float) -> pl.Expr:
+        if operator == ">": return pl.col(col_name) > value
+        if operator == "<": return pl.col(col_name) < value
+        if operator == ">=": return pl.col(col_name) >= value
+        if operator == "<=": return pl.col(col_name) <= value
+        if operator == "==": return pl.col(col_name) == value
+        if operator == "!=": return pl.col(col_name) != value
+        return pl.lit(False)
+
+    def evaluate_rules(self, batch: pl.DataFrame) -> Tuple[pl.DataFrame, pl.DataFrame]:
+        if batch.height == 0 or not self.rules:
+            return batch, pl.DataFrame(schema={"timestamp": pl.Utf8, "rule_id": pl.Utf8, "priority": pl.Utf8, "sensor_id": pl.Utf8, "value": pl.Utf8})
+
+        rule_masks = {}
         alarms_list = []
-        
-        # ==========================================
-        # PHASE 1: Vectorized Simple Rules
-        # ==========================================
-        for rule in self.simple_rules:
-            cond = None
-            if rule['operator'] == '>': cond = pl.col('value') > rule['value']
-            elif rule['operator'] == '<': cond = pl.col('value') < rule['value']
-            elif rule['operator'] == '==': cond = pl.col('value') == rule['value']
+
+        # 1. Attach original index FIRST to safely map back isolated sensor frames
+        # (This completely solves the bug where S2's alarm was mapped to S1)
+        batch_with_idx = batch.with_row_count("orig_idx")
+
+        # --- PHASE 1: Base Rules (Fully Vectorized) ---
+        for rule in [r for r in self.rules if r['type'] != 'correlation']:
+            sensor_mask = batch_with_idx['sensor_id'] == rule['sensor_id']
+            rule_id = rule['rule_id']
             
-            if cond is not None:
-                triggered = batch.filter((pl.col('sensor_id') == rule['sensor_id']) & cond)
-                if triggered.height > 0:
-                    alarm_df = triggered.with_columns(
-                        pl.lit(rule['rule_id']).alias('rule_id'),
-                        pl.lit(rule['priority']).alias('priority')
-                    ).select(["timestamp", "rule_id", "sensor_id", "value", "priority"]) # AGGIUNGI QUESTO SELECT
+            if rule['type'] == 'simple':
+                op_mask = batch_with_idx.select(self._get_op_expr('value', rule['operator'], rule['value'])).to_series()
+                final_mask = sensor_mask & op_mask
+                
+            elif rule['type'] == 'step_difference':
+                sensor_df = batch_with_idx.filter(sensor_mask)
+                if sensor_df.height > 0:
+                    last_val = self.memory.get_last_value(rule['sensor_id'])
                     
-                    alarms_list.append(alarm_df)
-
-        # ==========================================
-        # PHASE 2: Stateful & Step Rules (Sequential)
-        # ==========================================
-        state_alarms = []
-        for row in batch.iter_rows(named=True):
-            
-            # Step Rules
-            for rule in self.step_rules:
-                if row['sensor_id'] == rule['sensor_id']:
-                    last_val = memory.get_last_value(rule['sensor_id'])
+                    # diff() is natively null on the first row. We patch only that null cleanly.
+                    diff_expr = pl.col('value').diff()
                     if last_val is not None:
-                        diff = abs(row['value'] - last_val)
-                        if self._evaluate_condition(diff, rule['operator'], rule['value']):
-                            state_alarms.append(self._create_alarm_dict(row, rule))
-                    memory.set_last_value(rule['sensor_id'], row['value'])
+                        diff_expr = diff_expr.fill_null(pl.col('value') - last_val)
+                    else:
+                        diff_expr = diff_expr.fill_null(0.0)
 
-            # Stateful Rules
-            for rule in self.stateful_rules:
-                 if row['sensor_id'] == rule['sensor_id']:
-                     is_breach = self._evaluate_condition(row['value'], rule['operator'], rule['value'])
-                     current_streak = memory.get_current_count(rule['rule_id'], rule['sensor_id'])
-                     new_streak = current_streak + 1 if is_breach else 0
-                     memory.set_consecutive_count(rule['rule_id'], rule['sensor_id'], new_streak)
-                     if new_streak >= rule['consecutive_measurements']:
-                         state_alarms.append(self._create_alarm_dict(row, rule))
-                         
-        if state_alarms:
-            state_df = pl.DataFrame(state_alarms).select(["timestamp", "rule_id", "sensor_id", "value", "priority"])
-            alarms_list.append(state_df)
+                    sensor_df = sensor_df.with_columns(diff_expr.alias('diff_val'))
+                    op_mask_sensor = sensor_df.select(self._get_op_expr('diff_val', rule['operator'], rule['value'])).to_series()
+                    
+                    self.memory.set_last_value(rule['sensor_id'], sensor_df['value'][-1])
+                    
+                    # Safely map back using the exact original global row indices
+                    violating_indices = sensor_df.filter(op_mask_sensor)['orig_idx']
+                    final_mask = batch_with_idx['orig_idx'].is_in(violating_indices)
+                else:
+                    final_mask = pl.Series(name="mask", values=[False]*batch.height)
+
+            elif rule['type'] == 'stateful':
+                sensor_df = batch_with_idx.filter(sensor_mask)
+                if sensor_df.height > 0:
+                    op_mask_sensor = sensor_df.select(self._get_op_expr('value', rule['operator'], rule['value'])).to_series()
+                    
+                    # Vectorized streak calculation using Cumulative Sum grouping
+                    blocks = (~op_mask_sensor).cast(pl.Int32).cum_sum()
+                    sensor_df = sensor_df.with_columns(
+                        op_mask_sensor.alias('is_breach'),
+                        blocks.alias('block')
+                    ).with_columns(
+                        pl.col('is_breach').cast(pl.Int32).cum_sum().over('block').alias('streak')
+                    )
+                    
+                    # HPC Bridge: Carry over memory to the first block
+                    current_streak = self.memory.get_current_count(rule['rule_id'], rule['sensor_id'])
+                    if current_streak > 0 and sensor_df['is_breach'][0]:
+                        first_block = sensor_df['block'][0]
+                        sensor_df = sensor_df.with_columns(
+                            pl.when(pl.col('block') == first_block)
+                            .then(pl.col('streak') + current_streak)
+                            .otherwise(pl.col('streak'))
+                        )
+
+                    last_streak = sensor_df['streak'][-1] if sensor_df['is_breach'][-1] else 0
+                    self.memory.set_consecutive_count(rule['rule_id'], rule['sensor_id'], last_streak)
+                    
+                    streak_mask = sensor_df['streak'] >= rule['consecutive_measurements']
+                    
+                    # Safely map back using the exact original global row indices
+                    violating_indices = sensor_df.filter(streak_mask)['orig_idx']
+                    final_mask = batch_with_idx['orig_idx'].is_in(violating_indices)
+                else:
+                    final_mask = pl.Series(name="mask", values=[False]*batch.height)
+
+            rule_masks[rule_id] = final_mask
             
-        # ==========================================
-        # PHASE 3: Combination & Separation of Alarms
-        # ==========================================
-        if not alarms_list:
-            return batch, pl.DataFrame()
+            # Format alarms for valid extraction
+            if final_mask.any():
+                failed = batch.filter(final_mask).with_columns([
+                    pl.lit(rule_id).alias('rule_id'),
+                    pl.lit(rule.get('priority', 'LOW')).alias('priority'),
+                    pl.col('value').cast(pl.Utf8)
+                ]).select(["timestamp", "rule_id", "priority", "sensor_id", "value"])
+                alarms_list.append(failed)
 
-        # Aggrega tutti gli allarmi trovati e rimuovi i duplicati
-        final_alarms = pl.concat(alarms_list, how="vertical").unique(subset=['timestamp', 'rule_id', 'sensor_id'])
-        
-        # Sottrae gli allarmi dal batch originale per ottenere SOLO i dati sani (Anti-Join)
-        valid_batch = batch.join(final_alarms, on=["timestamp", "sensor_id"], how="anti")
-        
-        return valid_batch, final_alarms
+        # --- PHASE 2: Correlation Rules ---
+        rule_to_sensor = {r['rule_id']: r.get('sensor_id') for r in self.rules}
 
-    def _evaluate_condition(self, val, operator, threshold):
-        if operator == '>': return val > threshold
-        if operator == '<': return val < threshold
-        if operator == '==': return val == threshold
-        return False
+        for rule in [r for r in self.rules if r['type'] == 'correlation']:
+            c1, c2 = rule['conditions'][0], rule['conditions'][1]
+            mask_a = rule_masks.get(c1, pl.Series(values=[False]*batch.height))
+            mask_b = rule_masks.get(c2, pl.Series(values=[False]*batch.height))
+            
+            ts_a = batch.filter(mask_a)['timestamp'].unique()
+            ts_b = batch.filter(mask_b)['timestamp'].unique()
+            
+            if rule['logic'] == 'AND':
+                target_ts = ts_a.filter(ts_a.is_in(ts_b))
+            else: # OR
+                target_ts = pl.concat([ts_a, ts_b]).unique()
+                
+            corr_mask = batch['timestamp'].is_in(target_ts)
+            rule_masks[rule['rule_id']] = corr_mask
+            
+            if len(target_ts) > 0:
+                parent_sensors = [rule_to_sensor.get(c1, "UNKNOWN"), rule_to_sensor.get(c2, "UNKNOWN")]
+                sensor_str = ",".join(parent_sensors)
+                
+                corr_alarms = batch.filter(corr_mask & batch['sensor_id'].is_in(parent_sensors))
+                if corr_alarms.height > 0:
+                    s1, s2 = parent_sensors[0], parent_sensors[1]
+                    
+                    # Ensure values are retrieved and concatenated in the exact chronological order of c1, c2
+                    grouped_corr = corr_alarms.group_by('timestamp', maintain_order=True).agg([
+                        pl.col('value').filter(pl.col('sensor_id') == s1).first().alias('val1'),
+                        pl.col('value').filter(pl.col('sensor_id') == s2).first().alias('val2')
+                    ])
+                    
+                    grouped_corr = grouped_corr.with_columns([
+                        pl.col('val1').cast(pl.Utf8).fill_null('NaN'),
+                        pl.col('val2').cast(pl.Utf8).fill_null('NaN')
+                    ]).with_columns(
+                        pl.concat_str([pl.col('val1'), pl.col('val2')], separator=",").alias("value")
+                    ).with_columns([
+                        pl.lit(rule['rule_id']).alias('rule_id'),
+                        pl.lit(rule.get('priority', 'HIGH')).alias('priority'),
+                        pl.lit(sensor_str).alias('sensor_id')
+                    ]).select(["timestamp", "rule_id", "priority", "sensor_id", "value"])
+                    
+                    alarms_list.append(grouped_corr)
+
+        # --- PHASE 3: Separation & Strict Sorting ---
+        if not rule_masks:
+            return batch, pl.DataFrame(schema={"timestamp": pl.Utf8, "rule_id": pl.Utf8, "priority": pl.Utf8, "sensor_id": pl.Utf8, "value": pl.Utf8})
+
+        mask_df = pl.DataFrame(rule_masks)
+        combined_mask = mask_df.select(pl.any_horizontal(pl.all())).to_series()
         
-    def _create_alarm_dict(self, row, rule):
-        return {
-            "timestamp": row["timestamp"], "rule_id": rule["rule_id"],
-            "sensor_id": row["sensor_id"], "value": row["value"],
-            "priority": rule["priority"]
-        }
+        anomalous_ts = batch.filter(combined_mask)['timestamp'].unique()
+        valid_telemetry = batch.filter(~batch['timestamp'].is_in(anomalous_ts))
+
+        if alarms_list:
+            alarm_telemetry = pl.concat(alarms_list)
+            
+            prio_map = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
+            alarm_telemetry = alarm_telemetry.with_columns(
+                pl.col('priority').replace(prio_map, return_dtype=pl.Int32).alias('sort_key')
+            ).sort(
+                by=["timestamp", "sort_key", "rule_id", "sensor_id"],
+                descending=[False, True, False, False]
+            ).drop("sort_key")
+        else:
+            alarm_telemetry = pl.DataFrame(schema={"timestamp": pl.Utf8, "rule_id": pl.Utf8, "priority": pl.Utf8, "sensor_id": pl.Utf8, "value": pl.Utf8})
+
+        return valid_telemetry, alarm_telemetry

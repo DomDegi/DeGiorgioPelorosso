@@ -9,17 +9,17 @@ from src.main import main
 
 # Define paths to our fixtures
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), 'fixtures')
-RULES_PATH = os.path.join(FIXTURES_DIR, 'test_rules.json')
+RULES_PATH = os.path.join(FIXTURES_DIR, 'test_rules2.json')
 SENSORS_PATH = os.path.join(FIXTURES_DIR, 'test_sensors.yaml')
-INPUT_CSV = os.path.join(FIXTURES_DIR, 'test_input.csv')
+INPUT_CSV = os.path.join(FIXTURES_DIR, 'test_input2.csv')
 
-# We now treat both as text/log files
-EXPECTED_VALID = os.path.join(FIXTURES_DIR, 'expected_valid_data.csv')
-EXPECTED_ALARMS = os.path.join(FIXTURES_DIR, 'expected_alarms.log')
+# Output Golden Masters
+EXPECTED_VALID = os.path.join(FIXTURES_DIR, 'expected_valid_data2.csv')
+EXPECTED_ALARMS = os.path.join(FIXTURES_DIR, 'expected_alarms2.log')
 
-def test_full_pipeline_execution(tmp_path):
+def test_full_pipeline_execution_scenario_2(tmp_path):
     """
-    End-to-End Integration Test via Raw Text Comparison.
+    End-to-End Integration Test via Raw Text Comparison for Scenario 2.
     """
     output_dir = str(tmp_path)
     
@@ -68,6 +68,9 @@ def test_full_pipeline_execution(tmp_path):
         expected_alarms_lines = [line.strip() for line in f if line.strip()]
 
     # 4. Sort lines alphabetically to ignore row order differences between engines
+    # Note: With our strict sorting in the rules engine, actual_alarms_lines 
+    # should naturally match expected_alarms_lines without sorting, but keeping 
+    # this ensures the test itself is bulletproof across different DataFrame libraries.
     actual_valid_lines.sort()
     expected_valid_lines.sort()
     actual_alarms_lines.sort()
@@ -78,7 +81,7 @@ def test_full_pipeline_execution(tmp_path):
         diff = '\n'.join(difflib.unified_diff(
             expected_valid_lines, 
             actual_valid_lines, 
-            fromfile='EXPECTED (Golden Master)', 
+            fromfile='EXPECTED (Golden Master 2)', 
             tofile='ACTUAL (Generated)', 
             lineterm=''
         ))
@@ -88,7 +91,7 @@ def test_full_pipeline_execution(tmp_path):
         diff = '\n'.join(difflib.unified_diff(
             expected_alarms_lines, 
             actual_alarms_lines, 
-            fromfile='EXPECTED ALARMS (Golden Master)', 
+            fromfile='EXPECTED ALARMS (Golden Master 2)', 
             tofile='ACTUAL ALARMS (Generated)', 
             lineterm=''
         ))

@@ -30,7 +30,7 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
     safe_batch_size = (batch_size // total_sensors) * total_sensors
     
     if safe_batch_size == 0:
-        safe_batch_size = total_sensors 
+        safe_batch_size = total_sensors # Ensure it's at least one full timestamp
         
     if safe_batch_size != batch_size:
         logger.warning(f"Requested batch_size ({batch_size}) splits timestamps. Auto-adjusting to safe multiple: {safe_batch_size}")
@@ -41,51 +41,38 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
     # --- COMPONENT INSTANTIATION ---
     memory: IStateMemory = DictStateMemory()
     
+    # Notice we use the original argument names mapped to our correct Polars classes
     reader: ITelemetryReader = CSVTelemetryReader(sensors_yaml_path=sensors_path, csv_path=input_path)
-    rules_engine: IRulesEngine = PolarsRulesEngine(rules_path=rules_path)
-    writer: IOutputWriter = CSVOutputWriter(output_dir=output_path)
+    rules_engine: IRulesEngine = PolarsRulesEngine(rules_json_path=rules_path, memory=memory)
+    writer: IOutputWriter = CSVOutputWriter(output_path=output_path, clean_start=True)
     
     batch_counter = 0
     total_alarms = 0
-    
-    # =========================================================
-    # SETUP HEADER TABELLA LOG
-    # =========================================================
-    logger.info("=" * 60)
-    logger.info(f"{'BATCH':>8} | {'ROWS PROCESSED':>16} | {'ALARMS DETECTED':>17} | {'STATUS':>9}")
-    logger.info("-" * 60)
     
     # --- MAIN ORCHESTRATION LOOP ---
     while True:
         # 1. Extract the next batch of telemetry
         telemetry_batch: pl.DataFrame = reader.extract_batch(batch_size)
         
-        # An empty batch means we hit the bottom of the file
-        if telemetry_batch.height == 0:
+        # An empty batch means we hit the bottom of the file (Polars uses .is_empty() or .height == 0)
+        if telemetry_batch.is_empty():
+            logger.info("EOF reached. No more telemetry to process.")
             break
             
         batch_counter += 1
  
         # 2. Evaluate business logic
-        valid_telemetry, alarm_telemetry = rules_engine.evaluate_rules(telemetry_batch, memory)
+        valid_telemetry, alarm_telemetry = rules_engine.evaluate_rules(telemetry_batch)
         total_alarms += alarm_telemetry.height
 
-        # --- STAMPA RIGA TABELLA ---
-        # L'uso di :>n allinea il testo a destra riempiendo con spazi fino a 'n' caratteri
-        status = "[ ALARM ]" if alarm_telemetry.height > 0 else "[  OK  ]"
-        logger.info(f"{batch_counter:>8} | {telemetry_batch.height:>16} | {alarm_telemetry.height:>17} | {status:>9}")
+        logger.info(f"Processing Batch #{batch_counter} | Rows: {telemetry_batch.height} | Alarms Found: {alarm_telemetry.height}")
 
         # 3. Write outputs
-        if valid_telemetry.height > 0:
+        if not valid_telemetry.is_empty():
             writer.write_valid_batch(valid_telemetry)
 
-        if alarm_telemetry.height > 0:
+        if not alarm_telemetry.is_empty():
             writer.write_alarms_batch(alarm_telemetry)
 
-    # =========================================================
-    # SETUP FOOTER TABELLA LOG
-    # =========================================================
-    logger.info("=" * 60)
-    logger.info("EOF reached. No more telemetry to process.")
-    logger.info(f"FINAL SUMMARY -> Total Batches: {batch_counter} | Total Alarms: {total_alarms}")
     logger.info("AstraLog-HPC Orchestrator Finished")
+    logger.info(f"Total batches processed: {batch_counter} | Total alarms detected: {total_alarms}")

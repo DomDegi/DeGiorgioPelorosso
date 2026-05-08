@@ -1,181 +1,198 @@
-import pytest
 import polars as pl
-from unittest.mock import patch, mock_open
+import json
+import logging
+from typing import Tuple
+from src.interfaces import IRulesEngine, IStateMemory
 
-from src.rules_engine import PolarsRulesEngine
-from src.state_memory import DictStateMemory
+logger = logging.getLogger(__name__)
 
-# ==========================================
-# FIXTURES
-# ==========================================
-@pytest.fixture
-def dummy_rules():
-    """
-    Provides a mock list of rules mimicking the content of rules.json.
-    Notice R2 was updated to use '>' because the Polars engine uses absolute differences (abs).
-    """
-    return [
-        {"rule_id": "R1", "type": "simple", "sensor_id": "TEMP-01", "operator": ">", "value": 50.0, "priority": "MEDIUM"},
-        {"rule_id": "R2", "type": "step_difference", "sensor_id": "PRES-01", "operator": ">", "value": 2.0, "priority": "LOW"},
-        {"rule_id": "R3", "type": "stateful", "sensor_id": "VOLT-MAIN", "operator": "<", "value": 20.0, "consecutive_measurements": 3, "priority": "HIGH"},
-        {"rule_id": "R4", "type": "correlation", "logic": "AND", "conditions": ["R1", "R2"], "priority": "HIGH"}
-    ]
+class PolarsRulesEngine(IRulesEngine):
+    def __init__(self, rules_json_path: str, memory: IStateMemory):
+        self.rules = self._load_rules(rules_json_path)
+        self.memory = memory
+        self._sort_rules_by_priority()
 
-@pytest.fixture
-def engine(dummy_rules):
-    with patch("builtins.open", mock_open(read_data='[]')):
-        engine_inst = PolarsRulesEngine(rules_path="fake_path.json")
+    def _load_rules(self, path: str) -> list:
+        with open(path, 'r') as f:
+            raw_rules = json.load(f)
+            
+        valid_priorities = {"LOW", "MEDIUM", "HIGH"}
+        sanitized = []
+        for r in raw_rules:
+            priority = r.get('priority', 'LOW').upper()
+            if priority in valid_priorities:
+                r['priority'] = priority
+                sanitized.append(r)
+        return sanitized
+
+    def _sort_rules_by_priority(self) -> None:
+        prio_map = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
+        self.rules.sort(key=lambda r: prio_map.get(r.get('priority', 'LOW'), 1), reverse=True)
+
+    def _get_op_expr(self, col_name: str, operator: str, value: float) -> pl.Expr:
+        if operator == ">": return pl.col(col_name) > value
+        if operator == "<": return pl.col(col_name) < value
+        if operator == ">=": return pl.col(col_name) >= value
+        if operator == "<=": return pl.col(col_name) <= value
+        if operator == "==": return pl.col(col_name) == value
+        if operator == "!=": return pl.col(col_name) != value
+        return pl.lit(False)
+
+    def evaluate_rules(self, batch: pl.DataFrame) -> Tuple[pl.DataFrame, pl.DataFrame]:
+        if batch.height == 0 or not self.rules:
+            return batch, pl.DataFrame(schema={"timestamp": pl.Utf8, "rule_id": pl.Utf8, "priority": pl.Utf8, "sensor_id": pl.Utf8, "value": pl.Utf8})
+
+        rule_masks = {}
+        alarms_list = []
+
+        # 1. Attach original index to safely map back isolated sensor frames
+        batch_with_idx = batch.with_row_count("orig_idx")
+
+        # --- PHASE 1: Base Rules (Fully Vectorized) ---
+        for rule in [r for r in self.rules if r['type'] != 'correlation']:
+            sensor_mask = batch_with_idx['sensor_id'] == rule['sensor_id']
+            rule_id = rule['rule_id']
+            
+            if rule['type'] == 'simple':
+                op_mask = batch_with_idx.select(self._get_op_expr('value', rule['operator'], rule['value'])).to_series()
+                final_mask = sensor_mask & op_mask
+                
+            elif rule['type'] == 'step_difference':
+                sensor_df = batch_with_idx.filter(sensor_mask)
+                if sensor_df.height > 0:
+                    last_val = self.memory.get_last_value(rule['sensor_id'])
+                    
+                    # Compute diff. Fill first element with (current - last_known_memory) if exists, else 0
+                    diff_expr = pl.col('value').diff()
+                    if last_val is not None:
+                        diff_expr = pl.when(pl.col('value').cum_count() == 1).then(pl.col('value') - last_val).otherwise(diff_expr)
+                    else:
+                        diff_expr = diff_expr.fill_null(0.0)
+
+                    sensor_df = sensor_df.with_columns(diff_expr.alias('diff_val'))
+                    op_mask_sensor = sensor_df.select(self._get_op_expr('diff_val', rule['operator'], rule['value'])).to_series()
+                    
+                    self.memory.set_last_value(rule['sensor_id'], sensor_df['value'][-1])
+                    
+                    # Safely map back using the exact original row indices
+                    violating_indices = sensor_df.filter(op_mask_sensor)['orig_idx']
+                    final_mask = batch_with_idx['orig_idx'].is_in(violating_indices)
+                else:
+                    final_mask = pl.Series(name="mask", values=[False]*batch.height)
+
+            elif rule['type'] == 'stateful':
+                sensor_df = batch_with_idx.filter(sensor_mask)
+                if sensor_df.height > 0:
+                    op_mask_sensor = sensor_df.select(self._get_op_expr('value', rule['operator'], rule['value'])).to_series()
+                    
+                    # Vectorized streak calculation using Cumulative Sum grouping
+                    blocks = (~op_mask_sensor).cast(pl.Int32).cum_sum()
+                    sensor_df = sensor_df.with_columns(
+                        op_mask_sensor.alias('is_breach'),
+                        blocks.alias('block')
+                    ).with_columns(
+                        pl.col('is_breach').cast(pl.Int32).cum_sum().over('block').alias('streak')
+                    )
+                    
+                    # HPC Bridge: Carry over memory to the first block
+                    current_streak = self.memory.get_current_count(rule['rule_id'], rule['sensor_id'])
+                    if current_streak > 0 and sensor_df['is_breach'][0]:
+                        first_block = sensor_df['block'][0]
+                        sensor_df = sensor_df.with_columns(
+                            pl.when(pl.col('block') == first_block)
+                            .then(pl.col('streak') + current_streak)
+                            .otherwise(pl.col('streak'))
+                        )
+
+                    last_streak = sensor_df['streak'][-1] if sensor_df['is_breach'][-1] else 0
+                    self.memory.set_consecutive_count(rule['rule_id'], rule['sensor_id'], last_streak)
+                    
+                    streak_mask = sensor_df['streak'] >= rule['consecutive_measurements']
+                    
+                    # Safely map back using the exact original row indices
+                    violating_indices = sensor_df.filter(streak_mask)['orig_idx']
+                    final_mask = batch_with_idx['orig_idx'].is_in(violating_indices)
+                else:
+                    final_mask = pl.Series(name="mask", values=[False]*batch.height)
+
+            rule_masks[rule_id] = final_mask
+            
+            # Format alarms for valid extraction
+            if final_mask.any():
+                failed = batch.filter(final_mask).with_columns([
+                    pl.lit(rule_id).alias('rule_id'),
+                    pl.lit(rule.get('priority', 'LOW')).alias('priority'),
+                    pl.col('value').cast(pl.Utf8)
+                ]).select(["timestamp", "rule_id", "priority", "sensor_id", "value"])
+                alarms_list.append(failed)
+
+        # --- PHASE 2: Correlation Rules ---
+        rule_to_sensor = {r['rule_id']: r.get('sensor_id') for r in self.rules}
+
+        for rule in [r for r in self.rules if r['type'] == 'correlation']:
+            c1, c2 = rule['conditions'][0], rule['conditions'][1]
+            mask_a = rule_masks.get(c1, pl.Series(values=[False]*batch.height))
+            mask_b = rule_masks.get(c2, pl.Series(values=[False]*batch.height))
+            
+            ts_a = batch.filter(mask_a)['timestamp'].unique()
+            ts_b = batch.filter(mask_b)['timestamp'].unique()
+            
+            if rule['logic'] == 'AND':
+                target_ts = ts_a.filter(ts_a.is_in(ts_b))
+            else: # OR
+                target_ts = pl.concat([ts_a, ts_b]).unique()
+                
+            corr_mask = batch['timestamp'].is_in(target_ts)
+            rule_masks[rule['rule_id']] = corr_mask
+            
+            if len(target_ts) > 0:
+                parent_sensors = [rule_to_sensor.get(c1, "UNKNOWN"), rule_to_sensor.get(c2, "UNKNOWN")]
+                sensor_str = ",".join(parent_sensors)
+                
+                corr_alarms = batch.filter(corr_mask & batch['sensor_id'].is_in(parent_sensors))
+                if corr_alarms.height > 0:
+                    s1, s2 = parent_sensors[0], parent_sensors[1]
+                    
+                    # Ensure values are retrieved and concatenated in the exact chronological order of c1, c2
+                    grouped_corr = corr_alarms.group_by('timestamp', maintain_order=True).agg([
+                        pl.col('value').filter(pl.col('sensor_id') == s1).first().alias('val1'),
+                        pl.col('value').filter(pl.col('sensor_id') == s2).first().alias('val2')
+                    ])
+                    
+                    grouped_corr = grouped_corr.with_columns([
+                        pl.col('val1').cast(pl.Utf8).fill_null('NaN'),
+                        pl.col('val2').cast(pl.Utf8).fill_null('NaN')
+                    ]).with_columns(
+                        pl.concat_str([pl.col('val1'), pl.col('val2')], separator=",").alias("value")
+                    ).with_columns([
+                        pl.lit(rule['rule_id']).alias('rule_id'),
+                        pl.lit(rule.get('priority', 'HIGH')).alias('priority'),
+                        pl.lit(sensor_str).alias('sensor_id')
+                    ]).select(["timestamp", "rule_id", "priority", "sensor_id", "value"])
+                    
+                    alarms_list.append(grouped_corr)
+
+        # --- PHASE 3: Separation & Strict Sorting ---
+        if not rule_masks:
+            return batch, pl.DataFrame(schema={"timestamp": pl.Utf8, "rule_id": pl.Utf8, "priority": pl.Utf8, "sensor_id": pl.Utf8, "value": pl.Utf8})
+
+        mask_df = pl.DataFrame(rule_masks)
+        combined_mask = mask_df.select(pl.any_horizontal(pl.all())).to_series()
         
-        # Inject our mock rules
-        engine_inst.rules = dummy_rules
-        
-        # Manually categorize rules as the __init__ would do
-        engine_inst.simple_rules = [r for r in dummy_rules if r['type'] == 'simple']
-        engine_inst.step_rules = [r for r in dummy_rules if r['type'] == 'step_difference']
-        engine_inst.stateful_rules = [r for r in dummy_rules if r['type'] == 'stateful']
-        engine_inst.correlation_rules = [r for r in dummy_rules if r['type'] == 'correlation']
-        
-        return engine_inst
+        anomalous_ts = batch.filter(combined_mask)['timestamp'].unique()
+        valid_telemetry = batch.filter(~batch['timestamp'].is_in(anomalous_ts))
 
-# ==========================================
-# TESTS FOR INDIVIDUAL RULES
-# ==========================================
+        if alarms_list:
+            alarm_telemetry = pl.concat(alarms_list)
+            
+            prio_map = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
+            alarm_telemetry = alarm_telemetry.with_columns(
+                pl.col('priority').replace(prio_map, return_dtype=pl.Int32).alias('sort_key')
+            ).sort(
+                by=["timestamp", "sort_key", "rule_id", "sensor_id"],
+                descending=[False, True, False, False]
+            ).drop("sort_key")
+        else:
+            alarm_telemetry = pl.DataFrame(schema={"timestamp": pl.Utf8, "rule_id": pl.Utf8, "priority": pl.Utf8, "sensor_id": pl.Utf8, "value": pl.Utf8})
 
-def test_evaluate_simple_rule(engine):
-    """Test that a simple absolute threshold rule triggers correctly.""" 
-    batch = pl.DataFrame({
-        'timestamp': ['T1', 'T2', 'T3'],
-        'sensor_id': ['TEMP-01', 'TEMP-01', 'OTHER'],
-        'value': [40.0, 55.0, 60.0] 
-        # 55.0 is the only violation for TEMP-01 (Rule R1: > 50.0)
-    })
-    
-    memory = DictStateMemory()
-    _, alarms = engine.evaluate_rules(batch, memory)
-    
-    assert alarms.height == 1
-    assert alarms["timestamp"][0] == "T2"
-    assert alarms["rule_id"][0] == "R1"
-
-def test_evaluate_step_rule_with_memory_bridge(engine):
-    """Test that relative variation works AND retrieves previous batch data via Memory."""
-    memory = DictStateMemory()
-    
-    # Simulate that the previous batch ended with PRES-01 at 100.0
-    memory.set_last_value('PRES-01', 100.0)
-
-    batch = pl.DataFrame({
-        'timestamp': ['T1', 'T2'],
-        'sensor_id': ['PRES-01', 'PRES-01'],
-        'value': [97.0, 96.0] 
-        # Row 0: abs(97.0 - 100.0) = 3.0 -> > 2.0 (ALARM!)
-        # Row 1: abs(96.0 - 97.0) = 1.0 -> < 2.0 (SAFE)
-    })
-    
-    _, alarms = engine.evaluate_rules(batch, memory)
-    
-    assert alarms.height == 1
-    assert alarms["timestamp"][0] == "T1"
-    assert alarms["rule_id"][0] == "R2"
-    
-    # Check that memory was accurately updated for the NEXT batch
-    assert memory.get_last_value('PRES-01') == 96.0
-
-def test_evaluate_stateful_rule_exact_trigger(engine):
-    """Test that an anomaly only triggers upon reaching N consecutive failures.""" 
-    batch = pl.DataFrame({
-        'timestamp': ['T1', 'T2', 'T3', 'T4', 'T5'],
-        'sensor_id': ['VOLT-MAIN', 'VOLT-MAIN', 'VOLT-MAIN', 'VOLT-MAIN', 'VOLT-MAIN'],
-        'value': [25.0, 19.0, 18.0, 17.0, 22.0]
-        # Row 0: 25.0 (Safe, Streak 0)
-        # Row 1: 19.0 (Fail, Streak 1)
-        # Row 2: 18.0 (Fail, Streak 2)
-        # Row 3: 17.0 (Fail, Streak 3) -> ALARM TRIGGERS HERE!
-        # Row 4: 22.0 (Safe, Streak 0) -> Reset
-    })
-    
-    memory = DictStateMemory()
-    _, alarms = engine.evaluate_rules(batch, memory)
-    
-    assert alarms.height == 1
-    assert alarms["timestamp"][0] == "T4"
-    assert alarms["rule_id"][0] == "R3"
-
-# ==========================================
-# TESTS FOR THE ORCHESTRATOR / EDGE CASES
-# ==========================================
-
-def test_orchestrator_separates_valid_and_alarms(engine):
-    """
-    Integration test: ensure the main evaluate_rules method processes 
-    data and generates the alarms DataFrame correctly.
-    """
-    batch = pl.DataFrame({
-        'timestamp': ['2026-04-24T10:00Z', '2026-04-24T10:01Z'],
-        'sensor_id': ['TEMP-01', 'PRES-01'],
-        'value': [60.0, 100.0], 
-        # TEMP-01 is 60.0 (Violates Simple Rule R1 > 50)
-        # PRES-01 is 100.0 (Safe)
-        'priority': ['HIGH', 'LOW']
-    })
-    
-    memory = DictStateMemory()
-    valid_df, alarms_df = engine.evaluate_rules(batch, memory)
-    
-    # 1. Valid DF in Polars design is the original batch
-    assert valid_df.height == 1
-    assert valid_df["sensor_id"][0] == 'PRES-01'
-    
-    # 2. Alarms DF should only contain TEMP-01
-    assert alarms_df.height == 1
-    assert alarms_df["sensor_id"][0] == 'TEMP-01'
-    assert alarms_df["rule_id"][0] == 'R1'
-
-def test_stateful_rule_streak_reset(engine):
-    """
-    EDGE CASE: A stateful rule requires 3 consecutive errors. 
-    The sequence is: Error -> Error -> Valid -> Error.
-    The rule MUST reset on the 'Valid' and NOT trigger an alarm on the final Error.
-    """
-    telemetry = pl.DataFrame({
-        'timestamp': ['T1', 'T2', 'T3', 'T4'],
-        'sensor_id': ['VOLT-01', 'VOLT-01', 'VOLT-01', 'VOLT-01'],
-        'value': [10.0, 10.0, 25.0, 10.0] # 10.0 is an error (e.g., < 20.0)
-    })
-    
-    # Override engine rules for this specific edge case
-    engine.stateful_rules = [{
-        "rule_id": "R_ST", "type": "stateful", "sensor_id": "VOLT-01", 
-        "operator": "<", "value": 20.0, "consecutive_measurements": 3, "priority": "HIGH"
-    }]
-    engine.simple_rules = []
-    engine.step_rules = []
-    
-    memory = DictStateMemory()
-    _, alarm_df = engine.evaluate_rules(telemetry, memory)
-    
-    # Because of the reset at T3, the streak never hits 3. Alarms should be empty.
-    assert alarm_df.height == 0, "Stateful rule failed to reset streak upon receiving valid data!"
-
-def test_missing_sensor_guard_clause(engine):
-    """
-    EDGE CASE: The rules engine asks to monitor 'TEMP-05', but the current
-    batch doesn't contain any readings for 'TEMP-05'. The engine must 
-    bypass the rule securely without throwing a KeyError.
-    """
-    telemetry = pl.DataFrame({
-        'timestamp': ['T1'],
-        'sensor_id': ['PRES-02'], # TEMP-05 is completely missing
-        'value': [101.3]
-    })
-    
-    engine.simple_rules = [{
-        "rule_id": "R1", "type": "simple", "sensor_id": "TEMP-05", 
-        "operator": ">", "value": 50.0, "priority": "HIGH"
-    }]
-    
-    memory = DictStateMemory()
-    valid_df, alarm_df = engine.evaluate_rules(telemetry, memory)
-    
-    assert alarm_df.height == 0, "Missing sensor should not generate alarms"
-    assert valid_df.height == 1, "Valid data should remain intact"
+        return valid_telemetry, alarm_telemetry

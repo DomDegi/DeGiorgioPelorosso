@@ -5,14 +5,15 @@ Differentiation of the used terminology:
 - 'Batch': Refers to a logical unit of work processed in a single loop iteration 
   by the Orchestrator. It represents a discrete step in time.
 - 'Chunk': Refers to the physical block of memory/data read from or written to 
-  the disk by libraries like Pandas. (A 'chunk' of data becomes a 'batch' of work).
+  the disk by libraries like Pandas/Polars. (A 'chunk' of data becomes a 'batch' of work).
 - 'Telemetry': The domain-specific aerospace term for the actual data payload 
   (e.g., sensor readings like VOLT-MAIN). We use this instead of generic "data".
 """
 
 from abc import ABC, abstractmethod
-from typing import Tuple,Optional
+from typing import Tuple, Optional
 import polars as pl
+
 
 class ITelemetryReader(ABC):
     """
@@ -22,7 +23,7 @@ class ITelemetryReader(ABC):
     - Reason for Interface: Obscures the inner workings of how data is read from disk.
       By depending on this interface, the system doesn't care if the data comes from 
       a CSV, a JSON file, or an SQL Database. It makes unit testing trivial using Mocks.
-    - Implemented by: `CSVTelemetryReader` (which will handle Pandas chunking).
+    - Implemented by: `CSVTelemetryReader`.
     - Interfaced with: `BatchOrchestrator` (calls this to get the next block of work).
     """
     @abstractmethod
@@ -48,7 +49,7 @@ class IRulesEngine(ABC):
     Architecture Role:
     - Reason for Interface: Decouples the Orchestrator from the mathematical and 
       stateful logic required to evaluate satellite rules. 
-    - Implemented by: `PandasRulesEngine` (which will use vectorized C++ operations).
+    - Implemented by: `PolarsRulesEngine` (which will use vectorized Rust operations).
     - Interfaced with: `BatchOrchestrator` (passes raw telemetry in, gets evaluated telemetry out).
     """
     
@@ -76,7 +77,7 @@ class IStateMemory(ABC):
     - Reason for Interface: Stateful rules (e.g., "5 consecutive errors") and Step rules 
       require tracking data across multiple batches. This hides how state is stored.
     - Implemented by: `DictStateMemory` (stores state in local RAM).
-    - Interfaced with: `PandasRulesEngine` (queries this component during rule evaluation).
+    - Interfaced with: `PolarsRulesEngine` (queries this component during rule evaluation).
     """
     
     # --- For the Stateful Rules (Consecutive alerts) ---

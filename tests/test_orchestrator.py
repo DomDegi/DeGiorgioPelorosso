@@ -1,7 +1,6 @@
 import os
 import tempfile
 import yaml
-import polars as pl
 import pytest
 from unittest.mock import patch, MagicMock
 from src.orchestrator import orchestrator
@@ -31,8 +30,8 @@ def test_batch_auto_alignment(MockMemory, MockWriter, MockEngine, MockReader, mo
     
     # Setup mock reader to return an empty dataframe immediately to end the loop
     mock_reader_instance = MockReader.return_value
-    mock_reader_instance.extract_batch.return_value = pl.DataFrame()
-    
+    mock_reader_instance.extract_batch.return_value = MagicMock(is_empty=lambda: True, height=0)
+
     # Run orchestrator with dangerous batch size (10)
     orchestrator(
         batch_size=10, 
