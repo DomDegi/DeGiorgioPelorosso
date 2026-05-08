@@ -1,4 +1,4 @@
-# 🚀 AstraLog-HPC: Full Track Implementation
+# AstraLog-HPC: Full Track Implementation
 ### **Software Engineering for HPC - A.Y. 2025-2026**
 
 This repository contains the **Full Track** solution for the **AstraLog-HPC** project, developed to respond to a simulated "Call for Tenders" issued by the European Space Agency (ESA).
@@ -7,7 +7,14 @@ This repository contains the **Full Track** solution for the **AstraLog-HPC** pr
 
 ---
 
-## 👥 Team Members & Effort
+## AstraLog Control
+Here you can access the official documentation hub and web interface for the **AstraLog-HPC** project. 
+
+**[Click here to access AstraLog Control](https://simonereale.github.io/astralog-control/)**
+
+---
+
+## Team Members & Effort
 
 | Name Surname | Person Code | Role / Main Focus | Effort (Hours) |
 | :--- | :--- | :--- | :--- |
@@ -16,7 +23,7 @@ This repository contains the **Full Track** solution for the **AstraLog-HPC** pr
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```text
 .
@@ -43,12 +50,11 @@ This repository contains the **Full Track** solution for the **AstraLog-HPC** pr
 
 ---
 
-## 🛠️ Software Organization & Architecture 
+## Software Organization & Architecture 
 
 ### Language and Libraries
 - **Language:** Python 3.10
-- **Libraries:** 
-  - `pandas` (for high-performance, vectorized rule evaluation and chunked file reading)
+- **Libraries:** - `polars` (Rust-backed DataFrame library for massive multithreaded rule evaluation and CSV parsing)
   - `pyyaml` (for parsing sensor configurations)
   - `argparse` (for dynamic Slurm job parameterization)
   - `pytest` (for unit testing in the CI/CD pipeline)
@@ -57,119 +63,102 @@ This repository contains the **Full Track** solution for the **AstraLog-HPC** pr
 Our software architecture was designed strictly around the **Strategy** and **Dependency Inversion** patterns established during Phase 1. The core logic (`orchestrator.py`) relies entirely on Abstract Base Classes defined in `interfaces.py` (`ITelemetryReader`, `IRulesEngine`, `IStateMemory`, `IOutputWriter`). 
 
 This interface-driven design allowed us to cleanly separate the physical data handling from the logical rule evaluation:
-1. **Reader (`reader.py`):** Utilizes Pandas chunking to read massive CSV files in RAM-safe batches. It enforces strict type-checking, dropping corrupted rows before they enter the system.
-2. **Rules Engine (`rules_engine.py`):** Translates JSON rule configurations into vectorized Pandas operations. It handles complex Stateful and Step-Difference rules by querying the State Memory.
+1. **Reader (`reader.py`):** Utilizes a custom Python list-buffer to bridge Polars' native Rust chunking with the exact sensor-multiple batch sizes required to not split timestamp between batches. It enforces strict type-checking, dropping corrupted rows before they enter the system.
+2. **Rules Engine (`rules_engine.py`):** Translates JSON rule configurations into vectorized Polars Eager API queries. It handles complex Stateful and Step-Difference rules by querying the State Memory and applying boolean masking to completely avoid CPU L3-cache exhaustion.
 3. **State Memory (`state_memory.py`):** An O(1) in-memory dictionary that persists anomaly streaks and "last known values" across chunk boundaries.
-4. **Writer (`writer.py`):** Formats the separated nominal and anomalous data according to ESA specifications and appends them to disk.
+4. **Writer (`writer.py`):** Bypasses slow Python string formatting by utilizing Polars' native `.list.join("|")` at the Rust level to construct the custom ESA nominal formats before appending to disk.
 
 ### Simplifications and variations (if any)
-The batch_size, given as an argument, gets changed to the nearest multiple of the number of sensors in the configurations, so that the batches are all the same size.
+**Batch Size Auto-Alignment:** The `batch_size`, given as a CLI argument, gets automatically sanitized and adjusted to the nearest multiple of the number of active sensors in the configuration. This ensures that a single timestamp is never mathematically split across two different evaluation batches.
 
+### (For groups of three and four students) Distribution and parallelization approach
+*(Note: As a group of two students, we utilized the CSV track. However, our pipeline is heavily parallelized for HPC environments).*
+
+To achieve maximum throughput (processing ~850,000 rows/second), we migrated from a single-threaded Pandas approach to a **Polars / Rust multi-threaded architecture**. 
+By chunking the CSV into batches of ~1.6 million rows, we effectively feed the Polars Rayon thread pool with enough data to utilize at full 32-core SLURM compute node, preventing thread starvation while keeping the overall RAM footprint highly constrained. Mathematical operations like `.diff()` and `.cum_sum()` are executed completely in C/Rust, avoiding the Python Global Interpreter Lock (GIL).
 
 ### Usage of AI (if any)
 AI assistants (Gemini) were used primarily as a technical consultant to:
 - Understand and debug containerization concepts (Docker to Singularity conversion).
 - Formulate the CI/CD pipeline syntax for GitHub Actions.
-- Optimize Pandas vectorized operations for evaluating complex stateful rules.
+- Profile C-level execution times to identify and eliminate $O(N^2)$ memory-copying bottlenecks during the Pandas-to-Polars migration.
+- Configure SLURM scripts to avoid NFS login-node throttling by mapping container I/O directly to high-speed NVMe cluster scratch space (`$WORK`).
 
 ---
 
-## 🧪 Testing & Rationale
+## Testing & Rationale
 
 We implemented our test suite using `pytest`. The tests are designed to run automatically during the CI/CD pipeline to ensure code integrity before building the container.
 
-- **Isolation via Interfaces:** Because our architecture relies on interfaces, we were able to write unit tests for the `RulesEngine` without needing actual CSV files or I/O operations. We mocked the `IStateMemory` and passed raw Pandas DataFrames directly into the engine to verify edge cases (e.g., streak continuity across batches, complex AND/OR correlations).
-- **Sanitization Testing:** Tests were written to ensure the `CSVTelemetryReader` correctly identifies and drops malformed data (e.g., strings in numerical columns) without crashing the pipeline.
+- **Isolation via Interfaces:** Because our architecture relies on interfaces, we were able to write unit tests for the `RulesEngine` without needing actual CSV files or I/O operations. We mocked the `IStateMemory` and passed raw DataFrames directly into the engine to verify edge cases (e.g., streak continuity across batches, complex AND/OR correlations).
+- **Sanitization Testing:** Tests ensure the `CSVTelemetryReader` correctly identifies and drops malformed data according to Polars' strict schema checking without crashing the pipeline.
+- **Snapshots:** End-to-end regression tests verify that the output strings exactly match legacy baseline outputs regardless of internal hardware threading order.
 
 To run the tests locally:
 ```bash
-pytest # in the repo root
+python3 -m pytest tests/
 ```
 
 ---
 
-## 🚀 Pipeline & DevOps Workflow
+## Pipeline & DevOps Workflow
 
 Our project utilizes a modern, zero-touch CI/CD pipeline built on **GitHub Actions**.
 
-1. **Continuous Integration (CI):** Upon every push to the `main` branch, the pipeline spins up a virtual environment, installs dependencies, and runs the `pytest` suite.
-2. **Continuous Deployment (CD):** If the tests pass, the pipeline automatically builds a production Docker image using `Dockerfile.prod`.
-3. **Registry Publication:** The image is pushed to the GitHub Container Registry (GHCR).
-4. **HPC Execution:** On the CINECA Galileo100 supercomputer, our `job.sh` Slurm script utilizes **Singularity (Apptainer)** to pull the latest image directly from GHCR (`singularity pull docker://ghcr.io/...`). The container is completely stateless; the input datasets and configurations are injected via bind mounts (`--bind`) at runtime.
+1. **Continuous Integration (CI):** Upon every push to the `main` branch, the pipeline spins up a virtual environment, installs dependencies, and runs the `pytest` suite (23 tests).
+2. **Continuous Deployment (CD):** If the tests pass, the pipeline automatically builds a production Docker image using `Dockerfile.prod` and pushes it to the GitHub Container Registry (GHCR).
+3. **HPC Execution:** On the CINECA Galileo100 supercomputer, our `job.sh` SLURM script utilizes **Singularity (Apptainer)** to execute the container. 
 
-### HPC Execution Strategy & Network Workarounds
-On the CINECA Galileo100 supercomputer, our `job.sh` Slurm script utilizes **Singularity (Apptainer)** to execute the container. 
+### Cluster Operating Procedure (CINECA G100)
 
-Because HPC compute nodes do not have internet access, they cannot pull Docker images from GHCR directly. To solve this, we implemented a wrapper script (`submit.sh`). This script runs on the internet-connected login node to pull the latest image (`singularity pull docker://ghcr.io/...`) and then automatically submits the `job.sh` script to the compute queue.
+To achieve maximum I/O throughput, our `job.sh` script automatically creates an isolated, job-specific scratch directory on the cluster's high-speed `$WORK` filesystem, moving data off the slow network-mounted `$HOME` directory before executing the container.
 
-The container is completely stateless; the input datasets and configurations are injected into the environment via bind mounts (`--bind`) at runtime.
-
----
-
-## 🖥️ Cluster Operating Procedure
-
-Our architecture physically separates the containerized code from the input data. You only rebuild the container when the underlying Python logic changes. For daily tests, you only swap the input files.
-
-### PHASE 1: UPDATE CODE (Only when modifying .py files)
-1. **[LOCAL]** Edit `main.py`, `orchestrator.py`, or `rules_engine.py`.
-2. **[LOCAL]** Commit and push to GitHub.
-3. **[GITHUB]** Wait for the CI/CD Action to finish building the Docker image.
-4. **[CINECA]** Delete the old container so the job script downloads the fresh one:
-   ```bash
-   rm ~/astralog-hpc.sif
-   
-```
-
-### PHASE 2: UPLOAD INPUTS (Every time you run a new experiment)
-Run these commands from your **LOCAL** terminal to push files to CINECA:
-
+**1. Upload Inputs:**
+Run these commands from your local terminal to push files to CINECA:
 ```bash
-# 1. Create the inputs folder if it doesn't exist
 ssh username@login.g100.cineca.it "mkdir -p ~/inputs ~/results"
-
-# 2. Upload Configs (YAML/JSON)
 scp config/Current_sensors_sat_alpha.yaml username@login.g100.cineca.it:~/inputs/
 scp config/Current_rules_sat_alpha.json username@login.g100.cineca.it:~/inputs/
-
-# 3. Upload Telemetry Data (CSV)
-scp csv_input/export_sat_alpha_custom.csv username@login.g100.cineca.it:~/inputs/
-
-# 4. Upload the Master Job Script
-scp job.sh username@login.g100.cineca.it:~/
+scp csv_input/export_100X.csv username@login.g100.cineca.it:~/inputs/
+scp job.sh submit.sh username@login.g100.cineca.it:~/
 ```
 
-### PHASE 3: EXECUTE THE JOB
-If you want to change the target CSV or config files without uploading a new `job.sh`, simply edit the variables at the top of `job.sh` using `nano job.sh` on the cluster.
+**2. Prepare the Container Image:**
+Compute nodes lack internet access, so the image must be downloaded on the login node first to generate the `.sif` file. You can do this in two ways:
 
-1. **[CINECA]** Submit the job to the Slurm workload manager:
-   ```bash
-   sbatch job.sh
-   
-```
-2. **[CINECA]** Check the status of your job:
-   ```bash
-   squeue -u username
-   ```
-3. **[CINECA]** View the live terminal output:
-   ```bash
-   cat astralog_output.txt
-   cat astralog_error.txt
-   
-```
-
-### PHASE 4: DOWNLOAD RESULTS
-Once the job finishes, pull the generated data back to your local machine. Run this from your **LOCAL** terminal:
-
+*Option A: Automated Submit Script*
+Make the uploaded `submit.sh` script executable and run it. It will automatically download the image from GHCR and submit the Slurm job for you:
 ```bash
-# Download the entire results folder (use StrictHostKeyChecking=no to bypass load balancer warnings)
-scp -o StrictHostKeyChecking=no -r username@login.g100.cineca.it:~/results ./
+ssh username@login.g100.cineca.it
+chmod +x submit.sh
+./submit.sh
+```
 
-# (Optional) Download the logs
-scp -o StrictHostKeyChecking=no username@login.g100.cineca.it:~/astralog_output.txt ./
-scp -o StrictHostKeyChecking=no username@login.g100.cineca.it:~/astralog_error.txt ./
+*Option B: Manual Pull*
+If you prefer to submit the job manually, run the singularity pull command on the login node first:
+```bash
+ssh username@login.g100.cineca.it
+singularity pull astralog-hpc.sif docker://ghcr.io/domdegi/astralog-hpc:latest
+```
+
+**3. Execute the Job (If using Option B):**
+On the cluster, submit the job to the dedicated `usr_prod` compute partition (32 Cores, 64GB RAM):
+```bash
+sbatch job.sh
+```
+
+**4. Monitor and Download Results:**
+Check the live terminal output via the generated log:
+```bash
+cat astralog_run_<JOB_ID>.log
+```
+Once the job finishes, pull the generated data back to your local machine:
+```bash
+scp -o StrictHostKeyChecking=no -r username@login.g100.cineca.it:~/astralog_results_<JOB_ID> ./
 ```
 
 ---
 
-## 📄 License
+## License
+
 This project is licensed under the **MIT License**. See the `LICENSE` file for more details.
