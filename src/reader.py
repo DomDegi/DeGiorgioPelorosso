@@ -1,125 +1,92 @@
-import os
 import yaml
 import logging
-import pandas as pd
-import glob
-import json
-import csv
-import time
-from typing import List, Dict
-import numpy as np
-
+import polars as pl
 from src.interfaces import ITelemetryReader
 
 logger = logging.getLogger(__name__)
 
 class CSVTelemetryReader(ITelemetryReader):
-    """
-    Implementation of the ITelemetryReader interface that extracts and sanitizes 
-    the data from CSV format as per project specifications. 
-    """
-
     def __init__(self, sensors_yaml_path: str = None, csv_path: str = None):
         self.sensors_config = self._load_yaml(sensors_yaml_path)
+        self.csv_path = csv_path or "data/telemetry_stream.csv"
         
-        if not csv_path:
-            csv_path = "data/telemetry_stream.csv"
-            logger.debug(f"No CSV path provided. Defaulting to: {csv_path}")
-            
-        # Initialize the Pandas iterator. 
-        # ============================================
-        # 1. Handling malformed CSV structure with on_bad_lines='skip'.
-        # ============================================
-        # quoting=csv.QUOTE_NONE prevents unclosed quotes at EOF from causing a ParserError.
-        self._csv_iterator = pd.read_csv(
-            csv_path,
-            iterator=True,
-            on_bad_lines='skip',
-            quoting=csv.QUOTE_NONE
+        # Buffer to solve the Polars "50k chunk" vs Pandas "exact row count" mismatch
+        self._buffer = pl.DataFrame()
+        
+        self.schema = {
+            "timestamp": pl.Utf8,
+            "sensor_id": pl.Utf8,
+            "value": pl.Utf8,  # Read as string first for strict NA/type handling like Pandas
+            "priority": pl.Utf8
+        }
+        
+        self._batched_reader = pl.read_csv_batched(
+            self.csv_path,
+            dtypes=self.schema,
+            ignore_errors=True,
+            null_values=["", "NA", "NaN", "null"]
         )
-        logger.info(f"CSVTelemetryReader initialized successfully. Target file: {csv_path}")
-    
+        logger.info(f"CSVTelemetryReader initialized. Target: {self.csv_path}")
+
     def _load_yaml(self, path: str) -> dict:
-        """Private helper to load the sensors configuration."""
-        if not path:
-            path = "config/sensors.yaml"
-            
-        try:
-            with open(path, 'r') as file:
-                config = yaml.safe_load(file)
-                logger.debug(f"Successfully loaded sensor configuration from {path}")
-                return config
-        except FileNotFoundError:
-            logger.critical(f"Fatal Error: YAML configuration file not found at {path}")
-            raise FileNotFoundError(f"Error: YAML file not found at {path}")
-    
-    def _sanitize_batch(self, batch: pd.DataFrame) -> pd.DataFrame:
-        """
-        Cleans the data before it enters the system using STRICT TYPE CHECKING.
-        It does not attempt to convert or coerce malformed data; 
-        if a value has the wrong type, the row is dropped.
-        """
-        initial_len = len(batch)
-        logger.debug(f"Sanitizing raw batch of {initial_len} records...")
+        path = path or "config/sensors.yaml"
+        with open(path, 'r') as file:
+            return yaml.safe_load(file)
 
-        # 1. Schema Check (Mandatory columns)
-        required_columns = ['timestamp', 'sensor_id', 'value']
-        for col in required_columns:
-            if col not in batch.columns:
-                return pd.DataFrame(columns=required_columns + ['priority'])
-                
-        clean_batch = batch.copy()
-        # Drop rows with missing mandatory fields (NaN, pd.NA, None)
-        clean_batch = clean_batch.dropna(subset=required_columns)
-
-        # 2. Priority Column Handling (Optional -> Default to LOW)
-        if 'priority' not in clean_batch.columns:
-            clean_batch['priority'] = 'LOW'
-        else:
-            # Fill missing with LOW, cast to string, uppercase
-            clean_batch['priority'] = clean_batch['priority'].fillna('LOW').astype(str).str.upper()
-            
-            # STRICT REQUIREMENT: Only allow LOW, MEDIUM, HIGH. Drop the row if invalid.
-            valid_priorities = ['LOW', 'MEDIUM', 'HIGH']
-            clean_batch = clean_batch[clean_batch['priority'].isin(valid_priorities)]
-
-        # 3. Strict Type Checking (Values and Timestamps)
-        is_valid_ts = clean_batch['timestamp'].apply(lambda x: isinstance(x, str))
-        is_valid_id = clean_batch['sensor_id'].apply(lambda x: isinstance(x, str))
+    def _sanitize_batch(self, batch: pl.DataFrame) -> pl.DataFrame:
+        initial_len = batch.height
         
-        is_valid_val = pd.to_numeric(clean_batch['value'], errors='coerce').notna()
-        is_valid_date = pd.to_datetime(clean_batch['timestamp'], errors='coerce').notna()
+        # 1. Mandatory columns check
+        req_cols = ['timestamp', 'sensor_id', 'value']
+        missing_cols = [c for c in req_cols if c not in batch.columns]
+        if missing_cols:
+            return pl.DataFrame(schema={"timestamp": pl.Utf8, "sensor_id": pl.Utf8, "value": pl.Float64, "priority": pl.Utf8})
 
-        clean_batch = clean_batch[is_valid_ts & is_valid_id & is_valid_val & is_valid_date]
+        clean_batch = batch.drop_nulls(subset=req_cols)
 
-        #  Final Type Assignment
-        clean_batch['value'] = clean_batch['value'].astype(float)
-        clean_batch['timestamp'] = clean_batch['timestamp'].astype(str)
-        clean_batch['sensor_id'] = clean_batch['sensor_id'].astype(str)
+        # 2. Priority Handling (Default to LOW, uppercase, strict valid list)
+        if 'priority' not in clean_batch.columns:
+            clean_batch = clean_batch.with_columns(pl.lit('LOW').alias('priority'))
+        else:
+            clean_batch = clean_batch.with_columns(
+                pl.col('priority').fill_null('LOW').str.to_uppercase()
+            ).filter(
+                pl.col('priority').is_in(['LOW', 'MEDIUM', 'HIGH'])
+            )
 
-        # ==============================================
-        # 4. Final Logging
-        # ==============================================
-        dropped = initial_len - len(clean_batch)
+        # 3. Strict Type Checking (Values to Float, drop failures)
+        clean_batch = clean_batch.with_columns(
+            pl.col('value').cast(pl.Float64, strict=False)
+        ).drop_nulls(subset=['value'])
+
+        # Drop invalid datetimes but keep column as string (matching Pandas implementation)
+        clean_batch = clean_batch.with_columns(
+            pl.col("timestamp").str.to_datetime(strict=False).alias("parsed_time")
+        ).filter(
+            pl.col("parsed_time").is_not_null()
+        ).drop("parsed_time")
+
+        dropped = initial_len - clean_batch.height
         if dropped > 0:
-            logger.debug(f"Dropped {dropped} records due to strict type corruption or malformed data.")
+            logger.debug(f"Dropped {dropped} records due to strict type corruption.")
 
-        logger.debug(f"Sanitization complete. {len(clean_batch)} valid records extracted.")
         return clean_batch
-    
-    def extract_batch(self, batch_size: int) -> pd.DataFrame:
-        """
-        Reads 'batch_size' rows from the CSV and discards malformed data.
-        """
-        try:
-            logger.debug(f"Extracting next chunk of {batch_size} rows from CSV...")
-            raw_chunk = self._csv_iterator.get_chunk(batch_size)
-            clean_batch = self._sanitize_batch(raw_chunk)
-            return clean_batch
+
+    def extract_batch(self, batch_size: int) -> pl.DataFrame:
+        """Extracts exactly 'batch_size' rows using an internal buffer."""
+        # Fill buffer until it has enough rows or we hit EOF
+        while self._buffer.height < batch_size:
+            batches = self._batched_reader.next_batches(1)
+            if not batches:
+                break
+            self._buffer = pl.concat([self._buffer, batches[0]])
             
-        except StopIteration:
-            logger.info("End of CSV telemetry stream reached. No more data to extract.")
-            return pd.DataFrame()
-        except pd.errors.ParserError as e:
-            logger.warning(f"Found corruption near EOF or malformed line. Ignoring trash data. Details: {e}")
-            return pd.DataFrame()
+        if self._buffer.height == 0:
+            logger.info("End of CSV telemetry stream reached.")
+            return pl.DataFrame()
+
+        # Slice the exact required amount
+        raw_chunk = self._buffer.head(batch_size)
+        self._buffer = self._buffer.tail(self._buffer.height - batch_size)
+
+        return self._sanitize_batch(raw_chunk)

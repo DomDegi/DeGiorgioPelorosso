@@ -1,14 +1,13 @@
-import pandas as pd
+import polars as pl
 import yaml
 import logging
 
 # 1. Import the Interfaces (Abstract Base Classes)
-# Assuming the provided abstract classes are saved in 'interfaces.py'
 from src.interfaces import ITelemetryReader, IRulesEngine, IOutputWriter, IStateMemory
 
 # 2. Import Concrete Implementations
 from src.reader import CSVTelemetryReader
-from src.rules_engine import PandasRulesEngine
+from src.rules_engine import PolarsRulesEngine
 from src.writer import CSVOutputWriter
 from src.state_memory import DictStateMemory
 
@@ -24,13 +23,10 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
     # ---------------------------------------------------------
     # SAFETY FIX: Ensure batch_size is a multiple of total sensors
     # ---------------------------------------------------------
-    # Peek into the sensors.yaml to count the active sensors
     with open(sensors_path, 'r') as f:
         sensor_config = yaml.safe_load(f)
         total_sensors = len(sensor_config['sensors'])
     
-    # Calculate the nearest safe multiple of active sensors. 
-    # This prevents splitting a single timestamp across two different evaluation batches.
     safe_batch_size = (batch_size // total_sensors) * total_sensors
     
     if safe_batch_size == 0:
@@ -43,13 +39,11 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
     logger.info(f"Configuration loaded -> Batch Size: {batch_size} | Input: {input_path} | Output: {output_path}")
 
     # --- COMPONENT INSTANTIATION ---
-    # Here we instantiate the concrete classes, but we type-hint them 
-    # strictly as their Interfaces. This is the Python equivalent of Java's:
-    # ITelemetryReader reader = new CSVTelemetryReader(input_path);
     memory: IStateMemory = DictStateMemory()
     
+    # Notice we use the original argument names mapped to our correct Polars classes
     reader: ITelemetryReader = CSVTelemetryReader(sensors_yaml_path=sensors_path, csv_path=input_path)
-    rules_engine: IRulesEngine = PandasRulesEngine(rules_json_path=rules_path, memory=memory)
+    rules_engine: IRulesEngine = PolarsRulesEngine(rules_json_path=rules_path, memory=memory)
     writer: IOutputWriter = CSVOutputWriter(output_path=output_path, clean_start=True)
     
     batch_counter = 0
@@ -58,29 +52,26 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
     # --- MAIN ORCHESTRATION LOOP ---
     while True:
         # 1. Extract the next batch of telemetry
-        # The reader converts a physical chunk into a logical DataFrame batch
-        telemetry_batch: pd.DataFrame = reader.extract_batch(batch_size)
+        telemetry_batch: pl.DataFrame = reader.extract_batch(batch_size)
         
-        # An empty batch means we hit the bottom of the file
-        if telemetry_batch.empty:
+        # An empty batch means we hit the bottom of the file (Polars uses .is_empty() or .height == 0)
+        if telemetry_batch.is_empty():
             logger.info("EOF reached. No more telemetry to process.")
             break
             
         batch_counter += 1
  
         # 2. Evaluate business logic
-        # The Rules Engine separates nominal data from anomalies
         valid_telemetry, alarm_telemetry = rules_engine.evaluate_rules(telemetry_batch)
-        total_alarms += len(alarm_telemetry)
+        total_alarms += alarm_telemetry.height
 
-        logger.info(f"Processing Batch #{batch_counter} | Rows: {len(telemetry_batch)} | Alarms Found: {len(alarm_telemetry)}")
+        logger.info(f"Processing Batch #{batch_counter} | Rows: {telemetry_batch.height} | Alarms Found: {alarm_telemetry.height}")
 
         # 3. Write outputs
-        # The Writer handles the physical I/O chunking to the disk
-        if not valid_telemetry.empty:
+        if not valid_telemetry.is_empty():
             writer.write_valid_batch(valid_telemetry)
 
-        if not alarm_telemetry.empty:
+        if not alarm_telemetry.is_empty():
             writer.write_alarms_batch(alarm_telemetry)
 
     logger.info("AstraLog-HPC Orchestrator Finished")
