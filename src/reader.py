@@ -61,54 +61,41 @@ class CSVTelemetryReader(ITelemetryReader):
         """
         initial_len = len(batch)
         logger.debug(f"Sanitizing raw batch of {initial_len} records...")
-        
-        # ============================================
+
         # 1. Schema Check (Mandatory columns)
-        # ============================================
-        # Based on your test, 'priority' is also considered a mandatory column.
-        required_columns = ['timestamp', 'sensor_id', 'value', 'priority']
-        
-        # If even one column is missing, we drop the ENTIRE batch
+        required_columns = ['timestamp', 'sensor_id', 'value']
         for col in required_columns:
             if col not in batch.columns:
-                logger.debug(f"Batch rejected: missing mandatory column '{col}'.")
-                return pd.DataFrame(columns=required_columns)
+                return pd.DataFrame(columns=required_columns + ['priority'])
                 
         clean_batch = batch.copy()
-        
-        # Immediately remove null values (NaN, pd.NA, None)
+        # Drop rows with missing mandatory fields (NaN, pd.NA, None)
         clean_batch = clean_batch.dropna(subset=required_columns)
 
-        # ==============================================
-        # 2. Strict Type Checking (No conversion)
-        # ==============================================
-        
-        # 1. Base type checks for strings
+        # 2. Priority Column Handling (Optional -> Default to LOW)
+        if 'priority' not in clean_batch.columns:
+            clean_batch['priority'] = 'LOW'
+        else:
+            # Fill missing with LOW, cast to string, uppercase
+            clean_batch['priority'] = clean_batch['priority'].fillna('LOW').astype(str).str.upper()
+            
+            # STRICT REQUIREMENT: Only allow LOW, MEDIUM, HIGH. Drop the row if invalid.
+            valid_priorities = ['LOW', 'MEDIUM', 'HIGH']
+            clean_batch = clean_batch[clean_batch['priority'].isin(valid_priorities)]
+
+        # 3. Strict Type Checking (Values and Timestamps)
         is_valid_ts = clean_batch['timestamp'].apply(lambda x: isinstance(x, str))
         is_valid_id = clean_batch['sensor_id'].apply(lambda x: isinstance(x, str))
-        is_valid_prio = clean_batch['priority'].apply(lambda x: isinstance(x, str))
         
-        # 2. Specific check for NUMERIC format
-        # pd.to_numeric with errors='coerce' returns NaN for things like 'SENSOR_BROKEN'.
-        # .notna() turns this into a True/False mask. 
-        # We are JUST testing the type here; we are not mutating the actual column yet!
         is_valid_val = pd.to_numeric(clean_batch['value'], errors='coerce').notna()
-        
-        # 3. Specific check for the timestamp FORMAT
-        is_valid_date_format = pd.to_datetime(clean_batch['timestamp'], errors='coerce').notna()
+        is_valid_date = pd.to_datetime(clean_batch['timestamp'], errors='coerce').notna()
 
-        # Keep ONLY the rows that passed ALL checks
-        clean_batch = clean_batch[is_valid_ts & is_valid_id & is_valid_prio & is_valid_val & is_valid_date_format]
+        clean_batch = clean_batch[is_valid_ts & is_valid_id & is_valid_val & is_valid_date]
 
-        # ==============================================
-        # 3. Final Type Assignment (Fix for test matching)
-        # ==============================================
-        # Now that all dirty data has been removed, we can safely set the proper 
-        # column types for the surviving data to avoid 'object' dtype mismatches in Pandas.
+        #  Final Type Assignment
         clean_batch['value'] = clean_batch['value'].astype(float)
         clean_batch['timestamp'] = clean_batch['timestamp'].astype(str)
         clean_batch['sensor_id'] = clean_batch['sensor_id'].astype(str)
-        clean_batch['priority'] = clean_batch['priority'].astype(str)
 
         # ==============================================
         # 4. Final Logging
@@ -119,7 +106,7 @@ class CSVTelemetryReader(ITelemetryReader):
 
         logger.debug(f"Sanitization complete. {len(clean_batch)} valid records extracted.")
         return clean_batch
-
+    
     def extract_batch(self, batch_size: int) -> pd.DataFrame:
         """
         Reads 'batch_size' rows from the CSV and discards malformed data.

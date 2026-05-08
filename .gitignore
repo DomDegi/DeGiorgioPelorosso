@@ -33,3 +33,4 @@ output/
 
 # Ignores slurms outputs
 # slurm-*.out
+PROMPT.md

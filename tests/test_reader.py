@@ -53,9 +53,11 @@ def test_sanitize_batch_handles_missing_columns(bouncer):
         'sensor_id': ['TEMP-01'],
         'value': [25.5]
     })
-    
+
     # 2. ACT:
     cleaned_data = bouncer._sanitize_batch(missing_col_data)
-    
-    # 3. ASSERT: Because a mandatory column is missing, the ENTIRE batch should be empty
-    assert cleaned_data.empty is True
+
+    # 3. ASSERT: The row should survive, and priority should be set to 'LOW'
+    assert cleaned_data.empty is False, "Data should not be empty"
+    assert 'priority' in cleaned_data.columns, "Priority column was not created"
+    assert cleaned_data['priority'].iloc[0] == 'LOW', "Missing priority did not default to LOW"

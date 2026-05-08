@@ -33,7 +33,25 @@ class PandasRulesEngine(IRulesEngine):
 
     def _load_rules(self, path: str) -> list:
         with open(path, 'r') as f:
-            return json.load(f)
+            raw_rules = json.load(f)
+            
+        valid_priorities = {"LOW", "MEDIUM", "HIGH"}
+        sanitized_rules = []
+        
+        for rule in raw_rules:
+            # 1. Extract priority. If missing, default to LOW.
+            priority = rule.get('priority', 'LOW').upper()
+            
+            # 2. Strict Schema Enforcement
+            if priority not in valid_priorities:
+                logger.error(f"Rule {rule.get('rule_id')} rejected: Invalid priority '{priority}'. Must be LOW, MEDIUM, or HIGH.")
+                continue  # Skip this rule entirely
+                
+            # 3. Normalize the rule dictionary
+            rule['priority'] = priority
+            sanitized_rules.append(rule)
+            
+        return sanitized_rules
 
     def _sort_rules_by_priority(self) -> None:
         """
@@ -186,18 +204,17 @@ class PandasRulesEngine(IRulesEngine):
     # THE ORCHESTRATOR METHOD
     # ==========================================
     def evaluate_rules(self, telemetry_batch: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        
         rule_masks = {}    # Stores the boolean result mask for each rule
-        alarms_list = []   # Stores the rows that need to go to alarms.log
+        alarms_list = []   # Stores the rows that need to go to alarms.log 
         
-        # --- PHASE 1: Base Rules (Simple, Step, Stateful) ---
+        # --- PHASE 1: Base Rules (Simple, Step Difference, Stateful) ---
         base_rules = [r for r in self.rules if r['type'] != 'correlation']
         for rule in base_rules:
-            if rule['type'] == 'simple':
+            if rule['type'] == 'simple': 
                 mask = self._evaluate_simple_rule(telemetry_batch, rule)
-            elif rule['type'] == 'step_difference':
+            elif rule['type'] == 'step_difference': 
                 mask = self._evaluate_step_rule(telemetry_batch, rule)
-            elif rule['type'] == 'stateful':
+            elif rule['type'] == 'stateful': 
                 mask = self._evaluate_stateful_rule(telemetry_batch, rule)
                 
             rule_masks[rule['rule_id']] = mask
@@ -209,21 +226,61 @@ class PandasRulesEngine(IRulesEngine):
                 failed_rows['priority'] = rule.get('priority', 'LOW')
                 alarms_list.append(failed_rows)
 
-        # --- PHASE 2: Correlation Rules ---
+        # --- PHASE 2: Correlation Rules  ---
         correlation_rules = [r for r in self.rules if r['type'] == 'correlation']
+        
+        # Helper: Map rule_id to its target sensor_id
+        rule_to_sensor = {r['rule_id']: r.get('sensor_id') for r in self.rules}
+
         for rule in correlation_rules:
-            mask = self._evaluate_correlation_rule(telemetry_batch, rule, rule_masks)
-            rule_masks[rule['rule_id']] = mask
+            cond_a, cond_b = rule['conditions'][0], rule['conditions'][1]
             
-            failed_rows = telemetry_batch[mask].copy()
-            if not failed_rows.empty:
-                failed_rows['rule_id'] = rule['rule_id']
-                failed_rows['priority'] = rule.get('priority', 'HIGH')
-                # For correlation, specs say: "list all sensors involved".
-                # We overwrite the sensor_id with a comma-separated list of the parent sensors.
-                parent_sensors = ",".join([r['sensor_id'] for r in self.rules if r['rule_id'] in rule['conditions']])
-                failed_rows['sensor_id'] = parent_sensors
-                alarms_list.append(failed_rows)
+            # Get the boolean masks for the parent rules
+            mask_a = rule_masks.get(cond_a, pd.Series(False, index=telemetry_batch.index))
+            mask_b = rule_masks.get(cond_b, pd.Series(False, index=telemetry_batch.index))
+            
+            # Extract the unique TIMESTAMPS where the parent rules triggered
+            ts_a = set(telemetry_batch[mask_a]['timestamp'])
+            ts_b = set(telemetry_batch[mask_b]['timestamp'])
+            
+            # Evaluate logic at the timestamp level
+            if rule['logic'] == 'AND':
+                target_ts = ts_a & ts_b
+            elif rule['logic'] == 'OR':
+                target_ts = ts_a | ts_b
+            else:
+                target_ts = set()
+            
+            # Update combined rule_masks so valid_data.csv knows to drop these timestamps
+            corr_mask = telemetry_batch['timestamp'].isin(target_ts)
+            rule_masks[rule['rule_id']] = corr_mask
+            
+            if target_ts:
+                # Format: "S1,S3"
+                parent_sensors = [rule_to_sensor.get(cond_a, "UNKNOWN"), rule_to_sensor.get(cond_b, "UNKNOWN")]
+                sensor_str = ",".join(parent_sensors)
+                
+                # Synthesize the correlation alarm row
+                corr_alarms = []
+                for ts in sorted(list(target_ts)):
+                    ts_data = telemetry_batch[telemetry_batch['timestamp'] == ts]
+                    
+                    # Extract the exact values for S1 and S3 at this timestamp
+                    vals = []
+                    for s in parent_sensors:
+                        val_series = ts_data[ts_data['sensor_id'] == s]['value']
+                        vals.append(str(val_series.iloc[0]) if not val_series.empty else "NaN")
+                        
+                    corr_alarms.append({
+                        'timestamp': ts,
+                        'rule_id': rule['rule_id'],
+                        'priority': rule.get('priority', 'HIGH'),
+                        'sensor_id': sensor_str,
+                        'value': ",".join(vals)
+                    })
+                    
+                alarms_list.append(pd.DataFrame(corr_alarms))
+
         # --- PHASE 3: Separate Valid vs Alarms ---
         
         # If no rules were loaded or parsed, everything is valid
@@ -239,8 +296,6 @@ class PandasRulesEngine(IRulesEngine):
         anomalous_timestamps = infected_rows['timestamp'].unique()
 
         # 2. CREATE VALID DATA
-        # CRITICAL FIX: The requirement states "the whole time_stamp is discarded".
-        # We must filter out ALL rows whose timestamp appears in the anomalous list.
         valid_telemetry = telemetry_batch[~telemetry_batch['timestamp'].isin(anomalous_timestamps)].copy()
 
         # 3. CREATE ALARMS DATA
@@ -248,8 +303,16 @@ class PandasRulesEngine(IRulesEngine):
         # the injected 'rule_id' and 'priority' metadata required by the Writer.
         if alarms_list:
             alarm_telemetry = pd.concat(alarms_list, ignore_index=True)
-            # Reorder columns to strictly match the Writer's expected format
             alarm_telemetry = alarm_telemetry[['timestamp', 'rule_id', 'priority', 'sensor_id', 'value']]
+            
+            # STRICT SORTING: Chronological -> Priority (Desc) -> Rule ID (Asc) -> Sensor ID (Asc)
+            prio_map = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
+            alarm_telemetry['sort_key'] = alarm_telemetry['priority'].map(prio_map).fillna(1)
+            alarm_telemetry = alarm_telemetry.sort_values(
+                by=['timestamp', 'sort_key', 'rule_id', 'sensor_id'], 
+                ascending=[True, False, True, True]  # True=Ascending, False=Descending
+            ).drop(columns=['sort_key'])
+            
         else:
             # Return an empty shell if no alarms were found in this batch
             alarm_telemetry = pd.DataFrame(columns=['timestamp', 'rule_id', 'priority', 'sensor_id', 'value'])
