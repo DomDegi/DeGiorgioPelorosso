@@ -1,6 +1,7 @@
 import os
 import sys
 import pytest
+import difflib
 from unittest.mock import patch
 
 # Import your main entry point
@@ -12,7 +13,7 @@ RULES_PATH = os.path.join(FIXTURES_DIR, 'test_rules.json')
 SENSORS_PATH = os.path.join(FIXTURES_DIR, 'test_sensors.yaml')
 INPUT_CSV = os.path.join(FIXTURES_DIR, 'test_input.csv')
 
-# Note: We now treat both as text/log files
+# We now treat both as text/log files
 EXPECTED_VALID = os.path.join(FIXTURES_DIR, 'expected_valid_data.txt')
 EXPECTED_ALARMS = os.path.join(FIXTURES_DIR, 'expected_alarms.log')
 
@@ -72,6 +73,23 @@ def test_full_pipeline_execution(tmp_path):
     actual_alarms_lines.sort()
     expected_alarms_lines.sort()
     
-    # 5. Assert equality
-    assert actual_valid_lines == expected_valid_lines, "Mismatch in Valid Data output!"
-    assert actual_alarms_lines == expected_alarms_lines, "Mismatch in Alarms output!"
+    # 5. Assert equality and show EXACT differences if they fail
+    if actual_valid_lines != expected_valid_lines:
+        diff = '\n'.join(difflib.unified_diff(
+            expected_valid_lines, 
+            actual_valid_lines, 
+            fromfile='EXPECTED (Golden Master)', 
+            tofile='ACTUAL (Generated)', 
+            lineterm=''
+        ))
+        pytest.fail(f"Mismatch in Valid Data output!\nDiff:\n{diff}")
+
+    if actual_alarms_lines != expected_alarms_lines:
+        diff = '\n'.join(difflib.unified_diff(
+            expected_alarms_lines, 
+            actual_alarms_lines, 
+            fromfile='EXPECTED ALARMS (Golden Master)', 
+            tofile='ACTUAL ALARMS (Generated)', 
+            lineterm=''
+        ))
+        pytest.fail(f"Mismatch in Alarms output!\nDiff:\n{diff}")
