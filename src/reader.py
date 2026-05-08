@@ -73,20 +73,29 @@ class CSVTelemetryReader(ITelemetryReader):
         return clean_batch
 
     def extract_batch(self, batch_size: int) -> pl.DataFrame:
-        """Extracts exactly 'batch_size' rows using an internal buffer."""
-        # Fill buffer until it has enough rows or we hit EOF
-        while self._buffer.height < batch_size:
+        """Extracts exactly 'batch_size' rows using an optimized internal list buffer."""
+        
+        # 1. Put the leftover buffer into a list
+        batches_to_concat = [self._buffer] if self._buffer.height > 0 else []
+        current_height = self._buffer.height
+        
+        # 2. Append new batches to the list 
+        while current_height < batch_size:
             batches = self._batched_reader.next_batches(1)
             if not batches:
                 break
-            self._buffer = pl.concat([self._buffer, batches[0]])
+            batches_to_concat.append(batches[0])
+            current_height += batches[0].height
             
-        if self._buffer.height == 0:
+        if current_height == 0:
             logger.info("End of CSV telemetry stream reached.")
-            return pl.DataFrame()
+            return pl.DataFrame(schema=self.schema)
 
-        # Slice the exact required amount
-        raw_chunk = self._buffer.head(batch_size)
-        self._buffer = self._buffer.tail(self._buffer.height - batch_size)
+        # 3. Concatenate everything exactly ONCE
+        full_buffer = pl.concat(batches_to_concat)
+
+        # 4. Slice the exact required amount and keep the rest in the buffer
+        raw_chunk = full_buffer.head(batch_size)
+        self._buffer = full_buffer.tail(full_buffer.height - batch_size)
 
         return self._sanitize_batch(raw_chunk)
