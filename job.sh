@@ -2,47 +2,39 @@
 #SBATCH --job-name=astralog_job
 #SBATCH --account=tra26_TRNPLM
 #SBATCH --partition=g100_usr_prod
-#SBATCH --time=00:30:00
 #SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=2
-#SBATCH --mem=4GB
-#SBATCH --output=astralog_output.txt
-#SBATCH --error=astralog_error.txt
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=64G
+#SBATCH --time=00:15:00
+#SBATCH --output=astralog_run_%j.log
 
-echo "Starting AstroLog job on Galileo100 from HOME directory..."
+echo "Starting job on compute node: $HOSTNAME"
 
-module load singularity
+SCRATCH_DIR="$WORK/astralog_run_$SLURM_JOB_ID"
+mkdir -p $SCRATCH_DIR/inputs
+mkdir -p $SCRATCH_DIR/output
 
-IMAGE_NAME="astralog-hpc.sif"
+echo "Moving data to high-speed storage..."
+cp $HOME/inputs/export_100X.csv $SCRATCH_DIR/inputs/
+cp $HOME/astralog-hpc.sif $SCRATCH_DIR/
 
-# 2. Create local directories to prevent Singularity mount crashes
-mkdir -p $HOME/inputs
-mkdir -p $HOME/results
+export POLARS_MAX_THREADS=$SLURM_CPUS_PER_TASK
 
-# =================================================================
-# MASTER CONTROL PANEL
-# Define exactly which files you want to analyze today!
-# (Make sure these 3 files are actually uploaded into your $HOME/inputs folder on Galileo100)
-# =================================================================
-DATA_CSV="export_sat_alpha_custom.csv"
-CONFIG_RULES="Current_rules_sat_alpha.json"
-CONFIG_SENSORS="Current_sensors_sat_alpha.yaml"
-BATCH_SIZE=10000
-
-# 3. Execute the container, passing all dynamic arguments
-echo "Executing the main script inside the container..."
-
+echo "Executing pipeline..."
 singularity exec \
-  --pwd /workspace \
-  --bind $HOME/inputs:/workspace/inputs \
-  --bind $HOME/results:/workspace/output \
-  $IMAGE_NAME \
-  python -m src.main \
-    --batch_size $BATCH_SIZE \
-    --input_path /workspace/inputs/$DATA_CSV \
-    --output_path /workspace/output \
-    --rules_path /workspace/inputs/$CONFIG_RULES \
-    --sensors_path /workspace/inputs/$CONFIG_SENSORS
+    --pwd /workspace \
+    --bind $SCRATCH_DIR/inputs:/workspace/inputs \
+    --bind $SCRATCH_DIR/output:/workspace/output \
+    $SCRATCH_DIR/astralog-hpc.sif \
+    python3 -m src.main \
+    --batch_size 1599996 \ # About Thread_num * 50k (polars batch size) to maximize CPU utilization
+    --input_path inputs/export_100X.csv \
+    --output_path output \
+    --rules_path config/Current_rules_sat_alpha.json \
+    --sensors_path config/Current_sensors_sat_alpha.yaml
 
-echo "Job finished."
+echo "Execution complete. Moving results back to home directory..."
+cp -r $SCRATCH_DIR/output $HOME/astralog_results_$SLURM_JOB_ID/
+
+rm -rf $SCRATCH_DIR
+echo "Job finished successfully!"
