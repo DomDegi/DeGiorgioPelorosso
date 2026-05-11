@@ -11,6 +11,9 @@ Substitute USER_MAIL with the email of your CINECA account, then a CINECA login 
 ```bash
 ssh <USERNAME>@login.g100.cineca.it
 ```
+```bash
+ssh-keygen -R login.g100.cineca.it
+```
 Substitute USERNAME with the username associate with your CINECA account, than a confirmation is printed into terminal, accept it, and you are logged into the Galileo100 cluster.
 To check how many computational credits you currently have do:
 ```bash
