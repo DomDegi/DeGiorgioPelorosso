@@ -54,7 +54,8 @@ Here you can access the official documentation hub and web interface for the **A
 
 ### Language and Libraries
 - **Language:** Python 3.10
-- **Libraries:** - `polars` (Rust-backed DataFrame library for massive multithreaded rule evaluation and CSV parsing)
+- **Libraries:** 
+  - `polars` (Rust-backed DataFrame library for massive multithreaded rule evaluation and CSV parsing)
   - `pyyaml` (for parsing sensor configurations)
   - `argparse` (for dynamic Slurm job parameterization)
   - `pytest` (for unit testing in the CI/CD pipeline)
@@ -68,18 +69,20 @@ This interface-driven design allowed us to cleanly separate the physical data ha
 3. **State Memory (`state_memory.py`):** An O(1) in-memory dictionary that persists anomaly streaks and "last known values" across chunk boundaries.
 4. **Writer (`writer.py`):** Bypasses slow Python string formatting by utilizing Polars' native `.list.join("|")` at the Rust level to construct the custom ESA nominal formats before appending to disk.
 
-### Simplifications and variations (if any)
+### Simplifications and variations
 **Batch Size Auto-Alignment:** The `batch_size`, given as a CLI argument, gets automatically sanitized and adjusted to the nearest multiple of the number of active sensors in the configuration. This ensures that a single timestamp is never mathematically split across two different evaluation batches.
 
-### (For groups of three and four students) Distribution and parallelization approach
+### Distribution and parallelization approach
 *(Note: As a group of two students, we utilized the CSV track. However, our pipeline is heavily parallelized for HPC environments).*
 
 To achieve maximum throughput (processing ~850,000 rows/second), we migrated from a single-threaded Pandas approach to a **Polars / Rust multi-threaded architecture**. 
 By chunking the CSV into batches of ~1.6 million rows, we effectively feed the Polars Rayon thread pool with enough data to utilize at full 32-core SLURM compute node, preventing thread starvation while keeping the overall RAM footprint highly constrained. Mathematical operations like `.diff()` and `.cum_sum()` are executed completely in C/Rust, avoiding the Python Global Interpreter Lock (GIL).
 
-### Usage of AI (if any)
+### Usage of AI 
 AI assistants (Gemini) were used primarily as a technical consultant to:
+- General deubg.
 - Understand and debug containerization concepts (Docker to Singularity conversion).
+- Transport our original Pandas implementetion to Polars.
 - Formulate the CI/CD pipeline syntax for GitHub Actions.
 - Profile C-level execution times to identify and eliminate $O(N^2)$ memory-copying bottlenecks during the Pandas-to-Polars migration.
 - Configure SLURM scripts to avoid NFS login-node throttling by mapping container I/O directly to high-speed NVMe cluster scratch space (`$WORK`).
@@ -159,6 +162,6 @@ scp -o StrictHostKeyChecking=no -r username@login.g100.cineca.it:~/astralog_resu
 
 ---
 
-## License
+## License (IS IT CORRECT?)
 
 This project is licensed under the **MIT License**. See the `LICENSE` file for more details.
