@@ -18,9 +18,10 @@
       ]
     }
   },
-  "mounts": [
-    "source=${localEnv:SSH_AUTH_SOCK},target=/ssh-agent,type=bind"
-  ],
+"mounts": [
+    "source=${localEnv:SSH_AUTH_SOCK},target=/ssh-agent,type=bind",
+    "source=project-extensions,target=/root/.vscode-server/extensions,type=volume"
+],
   "remoteEnv": {
     "SSH_AUTH_SOCK": "/ssh-agent"
   },
