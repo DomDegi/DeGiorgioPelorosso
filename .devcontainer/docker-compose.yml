@@ -8,5 +8,10 @@ services:
     # Connect your local folder inside the container!
     volumes:
       - ../..:/workspace
-      # keep the container running in the background so you can enter and exit it whenever you want
+      # ADDED: Map the fixed symlink from your Mac into the container
+      - ~/.ssh/ssh_auth_sock_symlink:/ssh-agent
+    environment:
+      # ADDED: Tells the container to use this fixed path for SSH
+      - SSH_AUTH_SOCK=/ssh-agent
+    # keep the container running in the background so you can enter and exit it whenever you want
     command: tail -f /dev/null
