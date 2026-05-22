@@ -15,6 +15,7 @@ ENV/
 **/.DS_Store
 
 # Distribution / packaging
+scripts/
 dist/
 build/
 *.egg-info/
@@ -25,8 +26,15 @@ build/
 *.swp
 .DS_Store (for Mac users)
 
-# Ignores telemetry data which are too big
-csv_input/export_100X.csv
+# Ignores all telemetry data
+csv_input/
+# Except necessary ones
+!csv_input/
+!csv_input/export_set_alpha_custom_no_corruption.csv
+!csv_input/export_set_alpha_custom.csv
+!csv_input/export_set_alpha_small.csv
+!csv_input/export_set_alpha_medium.csv
+!csv_input/export_set_alpha_large.csv
 
 # Ignores local output directory
 output/
