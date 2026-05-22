@@ -36,3 +36,6 @@ output/
 
 # Other ignores
 PROMPT*.md
+
+# Leonardo's Mac specific ignores
+.devcontainer/docker-compose.override.yml

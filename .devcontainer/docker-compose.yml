@@ -1,17 +1,11 @@
-version: '3.8'
-
 services:
   dev-env:
     build:
-      context: .. # Tells docker to use as context the repo root
-      dockerfile: .devcontainer/Dockerfile # Tells docker where the dockerfile is
-    # Connect your local folder inside the container!
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
     volumes:
       - ../..:/workspace
-      # ADDED: Map the fixed symlink from your Mac into the container
-      - ~/.ssh/ssh_auth_sock_symlink:/ssh-agent
+      - ${SSH_AUTH_SOCK}:/ssh-agent
     environment:
-      # ADDED: Tells the container to use this fixed path for SSH
       - SSH_AUTH_SOCK=/ssh-agent
-    # keep the container running in the background so you can enter and exit it whenever you want
     command: tail -f /dev/null
