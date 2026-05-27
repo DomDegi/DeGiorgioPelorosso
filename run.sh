@@ -8,10 +8,10 @@ echo "========================================="
 
 # --- CONFIG ---
 BATCH_SIZE=10000
-INPUT_CSV="csv_input/export_sat_alpha_custom.csv"
+INPUT_CSV="inputs/csv_input/export_sat_alpha_custom.csv"
 OUTPUT_DIR="output"
-RULES_JSON="config/Current_rules_sat_alpha.json"
-SENSORS_YAML="config/Current_sensors_sat_alpha.yaml"
+RULES_JSON="inputs/Current_rules_sat_alpha.json"
+SENSORS_YAML="inputs/config/Current_sensors_sat_alpha.yaml"
 # ----------------------
 
 mkdir -p "$OUTPUT_DIR"

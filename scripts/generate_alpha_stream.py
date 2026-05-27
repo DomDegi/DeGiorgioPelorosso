@@ -102,8 +102,8 @@ def generate_mission_dataset(sensors_path: str, rules_path: str, output_path: st
 
 if __name__ == "__main__":
     generate_mission_dataset(
-        sensors_path="config/Current_sensors_sat_alpha.yaml",
-        rules_path="config/Current_rules_sat_alpha.json",
-        output_path="csv_input/export_sat_alpha_custom.csv",
+        sensors_path="inputs/config/Current_sensors_sat_alpha.yaml",
+        rules_path="inputs/config/Current_rules_sat_alpha.json",
+        output_path="inputs/csv_input/export_sat_alpha_custom.csv",
         num_timestamps=83334 # About 1 million total rows (83334 * 12 sensors)
     )
