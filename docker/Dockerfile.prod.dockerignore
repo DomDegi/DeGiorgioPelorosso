@@ -1,0 +1,32 @@
+# Git e configuration GitHub
+.git/
+.github/
+.gitignore
+
+# Local development folder
+.devcontainer/
+requirements_dev.txt
+
+# Cache Python and Pytest
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+
+# Development files
+*.md
+uml/
+scripts/
+output/
+tests/
+
+# SLURM job file
+job.sh
+
+# Docker production build files
+.dockerignore
+Dockerfile.prod
+Singularity.def
+

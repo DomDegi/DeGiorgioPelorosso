@@ -26,14 +26,8 @@ build/
 *.swp
 .DS_Store (for Mac users)
 
-# Ignores all telemetry data
-csv_input/
-# Except necessary ones
-!csv_input/export_set_alpha_custom_no_corruption.csv
-!csv_input/export_set_alpha_custom.csv
-!csv_input/export_set_alpha_small.csv
-!csv_input/export_set_alpha_medium.csv
-!csv_input/export_set_alpha_large.csv
+# Ignores big telemetry data
+inputs/csv_input/export_1*X.csv
 
 # Ignores local output directory
 output/
