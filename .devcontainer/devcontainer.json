@@ -18,12 +18,8 @@
       ]
     }
   },
-"mounts": [
-    "source=${localEnv:SSH_AUTH_SOCK},target=/ssh-agent,type=bind",
+  "mounts": [
     "source=project-extensions,target=/root/.vscode-server/extensions,type=volume"
-],
-  "remoteEnv": {
-    "SSH_AUTH_SOCK": "/ssh-agent"
-  },
+  ],
   "postStartCommand": "if [ -f /workspace/requirements_dev.txt ]; then pip install -r /workspace/requirements_dev.txt; fi"
 }
