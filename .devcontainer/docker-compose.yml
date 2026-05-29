@@ -5,7 +5,4 @@ services:
       dockerfile: .devcontainer/Dockerfile
     volumes:
       - ../..:/workspace
-      - ${SSH_AUTH_SOCK}:/ssh-agent
-    environment:
-      - SSH_AUTH_SOCK=/ssh-agent
     command: tail -f /dev/null
