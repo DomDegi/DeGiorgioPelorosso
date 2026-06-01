@@ -27,28 +27,30 @@ Here you can access the official documentation hub and web interface for the **A
 
 ```text
 .
-├── config/                    # Contains YAML and JSON configuration files
-│   ├── Current_rules_sat_alpha.json
-│   └── Current_sensors_sat_alpha.yaml
-├── csv_input/                 # Input datasets for testing
-├── src/                       # Source code directory
-│   ├── interfaces.py          # Abstract Base Classes defining system architecture
-│   ├── main.py                # Entry point handling argument parsing
-│   ├── orchestrator.py        # Main execution loop and component wiring
-│   ├── reader.py              # CSV ingestion and data sanitization
-│   ├── rules_engine.py        # Core logic evaluating Simple, Step, Stateful, and Correlation rules
-│   ├── state_memory.py        # In-memory dictionary for cross-batch state tracking
-│   └── writer.py              # I/O handler for exporting valid data and alarms
-├── .github/workflows/         # CI/CD Pipeline configuration
-│   └── cicd.yml               # Automated Pytest and Docker image build/push
-├── job.sh                     # Slurm script for CINECA Galileo100 execution
-├── Dockerfile.prod            # Production blueprint for containerization
+├── .devcontainer/             # VS Code Dev Container configurations
+│   ├── devcontainer.json
+│   ├── docker-compose.yml
+│   └── Dockerfile
+├── docker/                    # Production Docker configurations
+│   ├── Dockerfile.prod
+│   └── Dockerfile.prod.dockerignore
+├── docs/                      # Documentation and AstraLog Control site
+├── inputs/                    # All configuration and dataset files
+│   ├── config/                # YAML and JSON rules/sensors configs
+│   └── csv_input/             # Raw CSV telemetry datasets
+├── output/                    # Target directory for generated alarms
+├── scripts/                   # Benchmarking, profiling, and Bash utilities
+├── src/                       # Core Python source code
+├── tests/                     # Pytest automated test suite
+├── uml/                       # Architecture and sequence diagrams
+├── requirements_dev.txt       # Development Python dependencies
 ├── requirements_prod.txt      # Production Python dependencies
-├── requirements_dev.txt       # Development dependencies (including Pytest)
-└── tests/                     # Automated test suite
+├── job.sh                     # SLURM execution script for Galileo100
+├── submit.sh                  # HPC automated submission script
+├── run.sh                     # Local testing execution script
+├── README.md                  # Project documentation
+└── LICENSE                    # MIT License
 ```
-
----
 
 ## Software Organization & Architecture 
 
@@ -162,6 +164,6 @@ scp -o StrictHostKeyChecking=no -r username@login.g100.cineca.it:~/astralog_resu
 
 ---
 
-## License (IS IT CORRECT?)
+## License
 
 This project is licensed under the **MIT License**. See the `LICENSE` file for more details.
