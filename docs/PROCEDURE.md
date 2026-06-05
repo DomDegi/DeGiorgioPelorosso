@@ -12,11 +12,11 @@ Whenever you want to run a new experiment, you must upload your datasets and con
 ssh <username>@login.g100.cineca.it "mkdir -p ~/inputs ~/results"
 
 # 2. Upload Configurations (YAML/JSON)
-scp config/Current_sensors_sat_alpha.yaml <username>@login.g100.cineca.it:~/inputs/
-scp config/Current_rules_sat_alpha.json <username>@login.g100.cineca.it:~/inputs/
+scp inputs/config/Current_sensors_sat_alpha.yaml <username>@login.g100.cineca.it:~/inputs/
+scp inputs/config/Current_rules_sat_alpha.json <username>@login.g100.cineca.it:~/inputs/
 
 # 3. Upload Telemetry Data (CSV)
-scp csv_input/export_sat_alpha_custom_no_corruption.csv <username>@login.g100.cineca.it:~/inputs/
+scp inputs/csv_input/export_sat_alpha_custom_no_corruption.csv <username>@login.g100.cineca.it:~/inputs/
 
 # 4. Upload the Job & Submit Scripts
 scp job.sh submit.sh <username>@login.g100.cineca.it:~/
