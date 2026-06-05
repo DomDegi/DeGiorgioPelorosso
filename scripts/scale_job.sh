@@ -1,0 +1,83 @@
+#!/bin/bash
+#SBATCH --job-name=astralog_scale
+#SBATCH --account=tra26_TRNPLM
+#SBATCH --partition=g100_usr_prod
+#SBATCH --nodes=1
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=64G
+#SBATCH --time=01:00:00  # Increased time since we are running multiple files
+#SBATCH --output=astralog_scale_%j.log
+
+echo "Starting scalability test on compute node: $HOSTNAME"
+
+# 1. Define the files you want to test and the number of rows they contain.
+# Format: "filename:row_count"
+DATASETS=(
+    "export_sat_10M.csv:10000000"
+    "export_sat_25M.csv:25000000"
+    "export_sat_50M.csv:50000000"
+    "export_sat_100M.csv:100000000"
+)
+
+# Set up Scratch and output file
+SCRATCH_DIR="$WORK/astralog_scale_$SLURM_JOB_ID"
+RESULTS_FILE="$HOME/scalability_results.csv"
+
+mkdir -p $SCRATCH_DIR/inputs
+mkdir -p $SCRATCH_DIR/output
+
+# Initialize the results CSV with headers
+echo "Rows,Time_Seconds" > $RESULTS_FILE
+
+echo "Copying config files and Singularity container..."
+cp $HOME/inputs/*.json $SCRATCH_DIR/inputs/
+cp $HOME/inputs/*.yaml $SCRATCH_DIR/inputs/
+cp $HOME/astralog-hpc.sif $SCRATCH_DIR/
+
+export POLARS_MAX_THREADS=$SLURM_CPUS_PER_TASK
+
+# 2. Loop through each dataset
+for DATASET in "${DATASETS[@]}"; do
+    # Extract filename and row count using string manipulation
+    FILE="${DATASET%%:*}"
+    ROWS="${DATASET##*:}"
+    
+    echo "================================================="
+    echo "Testing dataset: $FILE ($ROWS rows)"
+    
+    # Copy the specific CSV to scratch
+    cp $HOME/inputs/$FILE $SCRATCH_DIR/inputs/
+    
+    # Start timer
+    START_TIME=$(date +%s)
+    
+    # Run the pipeline (using your optimal batch size of ~1.5M)
+    singularity exec \
+        --pwd /workspace \
+        --bind $SCRATCH_DIR/inputs:/workspace/inputs \
+        --bind $SCRATCH_DIR/output:/workspace/output \
+        $SCRATCH_DIR/astralog-hpc.sif \
+        python3 -m src.main \
+        --batch_size 1599996 \
+        --input_path inputs/$FILE \
+        --output_path output \
+        --rules_path inputs/Current_rules_sat_alpha.json \
+        --sensors_path inputs/Current_sensors_sat_alpha.yaml
+
+    # Stop timer
+    END_TIME=$(date +%s)
+    ELAPSED=$(($END_TIME - $START_TIME))
+    
+    echo "Finished $FILE in $ELAPSED seconds."
+    
+    # Save the result to our tracking CSV
+    echo "$ROWS,$ELAPSED" >> $RESULTS_FILE
+    
+    # Clean up the output folder so the next run starts fresh
+    rm -rf $SCRATCH_DIR/output/*
+    rm $SCRATCH_DIR/inputs/$FILE
+done
+
+echo "================================================="
+echo "Scalability test complete! Results saved to ~/scalability_results.csv"
+rm -rf $SCRATCH_DIR

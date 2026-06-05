@@ -15,7 +15,6 @@ ENV/
 **/.DS_Store
 
 # Distribution / packaging
-scripts/
 dist/
 build/
 *.egg-info/
