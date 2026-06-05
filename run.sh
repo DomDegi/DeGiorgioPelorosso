@@ -8,9 +8,9 @@ echo "========================================="
 
 # --- CONFIG ---
 BATCH_SIZE=10000
-INPUT_CSV="inputs/csv_input/export_sat_alpha_custom.csv"
+INPUT_CSV="inputs/csv_input/export_sat_alpha_large_fixed.csv"
 OUTPUT_DIR="output"
-RULES_JSON="inputs/Current_rules_sat_alpha.json"
+RULES_JSON="inputs/config/Current_rules_sat_alpha.json"
 SENSORS_YAML="inputs/config/Current_sensors_sat_alpha.yaml"
 # ----------------------
 
