@@ -1,4 +1,4 @@
-import pandas as pd
+import polars as pl
 import numpy as np
 import random
 import os
@@ -10,8 +10,8 @@ def generate_massive_dataset(num_rows: int = 1_000_000, output_path: str = "inpu
 
     # 1. GENERATE BASE DATA FAST (Using NumPy)
     # Generate timestamps (1 second apart)
-    start_date = pd.Timestamp("2026-04-24T00:00:00Z")
-    timestamps = [start_date + pd.Timedelta(seconds=i) for i in range(num_rows)]
+    start_date = pl.Timestamp("2026-04-24T00:00:00Z")
+    timestamps = [start_date + pl.Timedelta(seconds=i) for i in range(num_rows)]
 
     # Generate random sensors and priorities
     sensors = ['TEMP-01', 'PRES-01', 'VOLT-MAIN']
@@ -29,7 +29,7 @@ def generate_massive_dataset(num_rows: int = 1_000_000, output_path: str = "inpu
     value_col[anomaly_indices] = np.random.choice([60.0, 10.0, -5.0, 100.0], size=len(anomaly_indices))
 
     # Create the DataFrame
-    df = pd.DataFrame({
+    df = pl.DataFrame({
         'timestamp': timestamps,
         'sensor_id': sensor_col,
         'value': value_col,

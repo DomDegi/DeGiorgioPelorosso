@@ -1,4 +1,4 @@
-import pandas as pd
+import polars as pl
 import numpy as np
 import yaml
 import json
@@ -24,8 +24,8 @@ def generate_mission_dataset(sensors_path: str, rules_path: str, output_path: st
 
     # 2. VECTORIZED GENERATION (Fast)
     # Create timestamps (1 second apart)
-    start_date = pd.Timestamp("2026-05-01T00:00:00Z")
-    date_range = pd.date_range(start_date, periods=num_timestamps, freq='S')
+    start_date = pl.Timestamp("2026-05-01T00:00:00Z")
+    date_range = pl.date_range(start_date, periods=num_timestamps, freq='S')
     
     # Repeat each timestamp for number of sensors (DA-3: all sensors measure at the same instant)
     timestamps_col = np.repeat(date_range, num_sensors)
@@ -38,7 +38,7 @@ def generate_mission_dataset(sensors_path: str, rules_path: str, output_path: st
     # Base values around 60 with standard deviation of 15
     values_col = np.random.normal(loc=60.0, scale=15.0, size=num_rows)
 
-    df = pd.DataFrame({
+    df = pl.DataFrame({
         'timestamp': timestamps_col.strftime('%Y-%m-%dT%H:%M:%SZ'),
         'sensor_id': sensors_col,
         'value': values_col,

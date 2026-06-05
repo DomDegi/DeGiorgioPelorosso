@@ -19,9 +19,19 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
     It relies entirely on interfaces to interact with the underlying components.
     """
     logger.info("AstraLog-HPC Orchestrator Started")
+
+    # ---------------------------------------------------------
+    # SAFETY FIX 1: Prevent Out-Of-Memory (OOM) Crashes
+    # ---------------------------------------------------------
+    # Based on our benchmarking, 5,000,000 rows should be a safe upper limit for batch processing on a typical machine with 8GB RAM.
+    # This is a conservative cap to prevent users from accidentally crashing the system by requesting an excessively large batch size. 
+    MAX_SAFE_BATCH = 5_000_000
+    if batch_size > MAX_SAFE_BATCH:
+        logger.warning(f"Requested batch_size ({batch_size}) may exceeds RAM safety limits. Capping to {MAX_SAFE_BATCH}.")
+        batch_size = MAX_SAFE_BATCH
     
     # ---------------------------------------------------------
-    # SAFETY FIX: Ensure batch_size is a multiple of total sensors
+    # SAFETY FIX 2: Ensure batch_size is a multiple of total sensors
     # ---------------------------------------------------------
     with open(sensors_path, 'r') as f:
         sensor_config = yaml.safe_load(f)
