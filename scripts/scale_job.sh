@@ -13,10 +13,11 @@ echo "Starting scalability test on compute node: $HOSTNAME"
 # 1. Define the files you want to test and the number of rows they contain.
 # Format: "filename:row_count"
 DATASETS=(
-    "export_sat_10M.csv:10000000"
-    "export_sat_25M.csv:25000000"
-    "export_sat_50M.csv:50000000"
-    "export_sat_100M.csv:100000000"
+    "export_sat_alpha_custom_no_corruption.csv:1000000"
+    "export_10X.csv:10000000"
+    "export_25X.csv:25000000"
+    "export_50X.csv:50000000"
+    "export_100X.csv:100000000"
 )
 
 # Set up Scratch and output file
@@ -58,7 +59,7 @@ for DATASET in "${DATASETS[@]}"; do
         --bind $SCRATCH_DIR/output:/workspace/output \
         $SCRATCH_DIR/astralog-hpc.sif \
         python3 -m src.main \
-        --batch_size 1599996 \
+        --batch_size 200000 \
         --input_path inputs/$FILE \
         --output_path output \
         --rules_path inputs/Current_rules_sat_alpha.json \

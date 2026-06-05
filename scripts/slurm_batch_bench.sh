@@ -11,7 +11,7 @@
 echo "Starting Batch Size Benchmark on compute node: $HOSTNAME"
 
 # Choose a fixed dataset to benchmark against (e.g., your large dataset)
-DATASET="export_sat_alpha_large.csv"
+DATASET="export_10X.csv"
 RESULTS_FILE="$HOME/benchmark_results_reproduced.csv"
 
 # The batch sizes you tested in your original benchmark
