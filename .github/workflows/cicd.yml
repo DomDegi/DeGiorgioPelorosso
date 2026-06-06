@@ -72,6 +72,9 @@ jobs:
     needs: test # Only deploy docs if the code passes its tests
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     permissions:
       contents: read
       pages: write      # Needed to push to GitHub Pages
@@ -96,10 +99,14 @@ jobs:
       run: |
         pdoc ./src -o ./_site
 
+    - name: Configure GitHub Pages
+      uses: actions/configure-pages@v5
+
     - name: Upload Pages artifact
       uses: actions/upload-pages-artifact@v3
       with:
         path: './_site'
 
     - name: Deploy to GitHub Pages
+      id: deployment
       uses: actions/deploy-pages@v4
