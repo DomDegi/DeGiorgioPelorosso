@@ -12,14 +12,14 @@ ingestion and monitoring pipeline for the **European Space Agency (ESA)**.
 The system is built on a highly modular and encapsulated architecture, designed 
 specifically to be robust and highly scalable in a multithreaded environment.
 
-![Component Diagram](https://raw.githubusercontent.com/DomDegi/DeGiorgioPelorosso/main/uml/component_diagram.png)
+![Component Diagram](https://domdegi.github.io/DeGiorgioPelorosso/uml/component_diagram.png)
 ---
 
 ### Object-Oriented Design (Class View)
 To ensure maintainability and testability, the Orchestrator is completely decoupled 
 from the concrete implementations via Abstract Base Classes (Interfaces). 
 
-![Class Diagram](https://raw.githubusercontent.com/DomDegi/DeGiorgioPelorosso/main/uml/class_diagram.png)
+![Class Diagram](https://domdegi.github.io/DeGiorgioPelorosso/uml/class_diagram.png)
 ---
 
 ### Navigation
