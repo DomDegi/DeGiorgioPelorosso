@@ -93,6 +93,9 @@ AI assistants (Gemini) were used primarily as a technical consultant to:
 - Formulate the CI/CD pipeline syntax for GitHub Actions.
 - Profile C-level execution times to identify and eliminate $O(N^2)$ memory-copying bottlenecks during the Pandas-to-Polars migration.
 - Configure SLURM scripts to avoid NFS login-node throttling by mapping container I/O directly to high-speed NVMe cluster scratch space (`$WORK`).
+- Generate the pdoc comments and integrate them in the code after reviewing them.
+- Add the deployment of the pdoc as github pages to the ci/cd pipeline.
+- Fix the action deploying the pdocs and also the link to the UML images in the __init__.py comments (done with github copilot).
 
 ---
 
