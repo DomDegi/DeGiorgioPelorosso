@@ -1,4 +1,9 @@
 # AstraLog-HPC: Full Track Implementation
+
+[![CI/CD Pipeline](https://github.com/DomDegi/DeGiorgioPelorosso/actions/workflows/cicd.yml/badge.svg)](https://github.com/DomDegi/DeGiorgioPelorosso/actions/workflows/cicd.yml)
+[![Live Documentation](https://img.shields.io/badge/docs-Live_API_Reference-blue.svg)](https://<your-github-username>.github.io/DeGiorgioPelorosso/)
+[![Version](https://img.shields.io/badge/version-1.0.0-success.svg)]()
+
 ### **Software Engineering for HPC - A.Y. 2025-2026**
 
 This repository contains the **Full Track** solution for the **AstraLog-HPC** project, developed to respond to a simulated "Call for Tenders" issued by the European Space Agency (ESA).

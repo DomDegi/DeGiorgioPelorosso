@@ -28,7 +28,11 @@ jobs:
     - name: Execute pytest
       run: |
         python -m pytest
-
+        
+    - name: Build HTML Documentation
+      run: |
+        pdoc ./src -o ./docs/pdocs
+  
   # CD JOB: Build and push the Docker image
   build-and-push-container:
     needs: test # the image only builds if tests pass
@@ -62,3 +66,37 @@ jobs:
         push: true
         # env.OWNER_LC instead of github.repository_owner, the second could use uppercases causing error
         tags: ghcr.io/${{ env.OWNER_LC }}/astralog-hpc:latest
+  
+  # AUTONOMOUS DOCUMENTATION DEPLOYMENT
+  deploy-docs:
+    needs: test # Only deploy docs if the code passes its tests
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write      # Needed to push to GitHub Pages
+      id-token: write   # Needed for secure deployment
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v5 
+
+    - name: Setup Python
+      uses: actions/setup-python@v6 
+      with:
+        python-version: '3.10'
+
+    - name: Install pdoc
+      run: pip install pdoc>=16.0.0
+
+    - name: Generate HTML Documentation
+      run: |
+        pdoc ./src -o ./_site
+
+    - name: Upload Pages artifact
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: './_site'
+
+    - name: Deploy to GitHub Pages
+      uses: actions/deploy-pages@v4

@@ -1,3 +1,11 @@
+"""
+AstraLog-HPC Core Orchestrator.
+
+This module contains the central execution loop. It binds the abstract interfaces 
+to their concrete implementations and manages the lifecycle of the telemetry data 
+from ingestion, through evaluation, to exportation.
+"""
+
 import polars as pl
 import yaml
 import logging
@@ -16,8 +24,24 @@ logger = logging.getLogger(__name__)
 def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path: str, sensors_path: str) -> None:
     """
     Main orchestration loop that ties the system components together.
-    It relies entirely on interfaces to interact with the underlying components.
-    """
+    
+    It initializes the Reader, Rules Engine, State Memory, and Writer. It also enforces 
+    critical safety constraints to ensure Out-Of-Memory (OOM) protection and prevents 
+    timestamp splitting across batches.
+
+    Args:
+        batch_size (int): The user-requested maximum rows per batch.
+        input_path (str): Path to the input telemetry CSV.
+        output_path (str): Directory path to save output results and logs.
+        rules_path (str): Path to the rules JSON configuration.
+        sensors_path (str): Path to the sensors YAML configuration.
+
+    Notes:
+        - **OOM Protection**: Hard-caps the batch size to 5,000,000 rows.
+        - **Timestamp Integrity**: Auto-adjusts the batch size to the nearest multiple 
+          of the total sensor count to guarantee no single timestamp is split between batches.
+    """    
+    
     logger.info("AstraLog-HPC Orchestrator Started")
 
     # ---------------------------------------------------------

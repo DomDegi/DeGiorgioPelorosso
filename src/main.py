@@ -1,3 +1,11 @@
+"""
+AstraLog-HPC CLI Entry Point.
+
+This module initializes the application environment, configures the dual-output 
+logger (console and file), parses command-line arguments, and invokes the main 
+system Orchestrator.
+"""
+
 import os
 import logging
 import argparse
@@ -18,7 +26,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger("AstraLog-Main")
 
-def main():
+def main() -> None:
+    """
+    Main execution script for AstraLog-HPC.
+    
+    Parses execution arguments from the command line, tracks the total execution time 
+    for benchmarking purposes, and passes the configuration safely to the Orchestrator.
+    
+    Command Line Arguments:
+        --batch_size (int): The maximum number of rows to process in memory at once.
+        --input_path (str): The file path to the incoming telemetry CSV.
+        --output_path (str): The directory where results will be saved.
+        --rules_path (str): The file path to the JSON monitoring rules.
+        --sensors_path (str): The file path to the YAML sensors configuration.
+    """
+    
     parser = argparse.ArgumentParser(description="AstraLog-HPC Main Execution Script")
     
     # Define arguments

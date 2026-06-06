@@ -2,7 +2,7 @@
   "name": "AstraLog-HPC Dev",
   "dockerComposeFile": "./docker-compose.yml",
   "service": "dev-env",
-  "workspaceFolder": "/workspace/DegiorgioPelorosso",
+  "workspaceFolder": "/workspace/DeGiorgioPelorosso",
   
   "customizations": {
     "vscode": {

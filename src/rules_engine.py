@@ -1,3 +1,11 @@
+"""
+Business Logic and Rule Evaluation Component.
+
+This module is the mathematical heart of the application. It evaluates clean 
+telemetry against predefined JSON rules using vectorized Polars operations, 
+optimizing for High-Performance Computing (HPC) execution speeds.
+"""
+
 import polars as pl
 import json
 import logging
@@ -7,12 +15,37 @@ from src.interfaces import IRulesEngine, IStateMemory
 logger = logging.getLogger(__name__)
 
 class PolarsRulesEngine(IRulesEngine):
+    """
+    Concrete implementation of IRulesEngine utilizing Polars expressions.
+    
+    Evaluates Simple, Step Difference, Stateful, and Correlation rules. Uses a 
+    provided State Memory object to track streaks and past values across batch boundaries.
+    """
+
     def __init__(self, rules_json_path: str, memory: IStateMemory):
+        """
+        Initializes the Rules Engine, parses the rule definitions, and mounts the memory.
+
+        Args:
+            rules_json_path (str): Path to the JSON rules configuration file.
+            memory (IStateMemory): The memory component instance for tracking state.
+        """
+
         self.rules = self._load_rules(rules_json_path)
         self.memory = memory
         self._sort_rules_by_priority()
 
     def _load_rules(self, path: str) -> list:
+        """
+        Private helper to load and sanitize rules from a JSON file.
+
+        Args:
+            path (str): Path to the JSON rules file.
+
+        Returns:
+            list: A list of sanitized rule dictionaries.
+        """
+
         with open(path, 'r') as f:
             raw_rules = json.load(f)
             
@@ -26,10 +59,27 @@ class PolarsRulesEngine(IRulesEngine):
         return sanitized
 
     def _sort_rules_by_priority(self) -> None:
+        """
+        Sorts the loaded rules in-place to ensure HIGH priority rules are 
+        evaluated and logged before LOW priority rules.
+        """
+
         prio_map = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
         self.rules.sort(key=lambda r: prio_map.get(r.get('priority', 'LOW'), 1), reverse=True)
 
     def _get_op_expr(self, col_name: str, operator: str, value: float) -> pl.Expr:
+        """
+        Translates string-based mathematical operators into Polars Native Expressions.
+
+        Args:
+            col_name (str): The DataFrame column to evaluate.
+            operator (str): The mathematical operator (e.g., ">", "==").
+            value (float): The threshold value to check against.
+
+        Returns:
+            pl.Expr: A lazy-evaluated Polars expression representing the logic.
+        """
+
         if operator == ">": return pl.col(col_name) > value
         if operator == "<": return pl.col(col_name) < value
         if operator == ">=": return pl.col(col_name) >= value
@@ -39,6 +89,21 @@ class PolarsRulesEngine(IRulesEngine):
         return pl.lit(False)
 
     def evaluate_rules(self, batch: pl.DataFrame) -> Tuple[pl.DataFrame, pl.DataFrame]:
+        """
+        Evaluates a batch of raw telemetry against the project rules.
+
+        Processes the batch in three phases:
+        1. Base Rules (Fully Vectorized simple, step, and stateful tracking).
+        2. Correlation Rules (Logical combinations of base rule masks).
+        3. Separation & Sorting (Splits the frame into Nominal and Anomalous data).
+
+        Args:
+            batch (pl.DataFrame): The sanitized telemetry batch from the Reader.
+
+        Returns:
+            Tuple[pl.DataFrame, pl.DataFrame]: A tuple containing (valid_telemetry, alarm_telemetry).
+        """
+        
         if batch.height == 0 or not self.rules:
             return batch, pl.DataFrame(schema={"timestamp": pl.Utf8, "rule_id": pl.Utf8, "priority": pl.Utf8, "sensor_id": pl.Utf8, "value": pl.Utf8})
 

@@ -1,3 +1,10 @@
+"""
+Data Exportation Component.
+
+Handles the physical writing of evaluated data frames to the local filesystem. 
+Enforces the strict string formatting required by the project specifications.
+"""
+
 import os
 import polars as pl
 import logging
@@ -6,7 +13,23 @@ from src.interfaces import IOutputWriter
 logger = logging.getLogger(__name__)
 
 class CSVOutputWriter(IOutputWriter):
+    """
+    Concrete implementation of IOutputWriter for CSV and Log files.
+    
+    Transforms the vectorized Polars representations back into the highly specific, 
+    semicolon-separated string formats required for both Nominal and Alarm outputs.
+    """
+
     def __init__(self, output_path: str, clean_start: bool = True):
+        """
+        Initializes the output paths and optionally clears previous execution logs.
+
+        Args:
+            output_path (str): The base directory where the output files will be created.
+            clean_start (bool, optional): If True, deletes existing files in the output 
+                                          directory to prevent appending to old data. Defaults to True.
+        """
+
         self.output_path = output_path
         os.makedirs(self.output_path, exist_ok=True)
         
@@ -20,6 +43,16 @@ class CSVOutputWriter(IOutputWriter):
         logger.info(f"Output Writer initialized. Target: {self.output_path}")
 
     def write_valid_batch(self, valid_telemetry: pl.DataFrame) -> None:
+        """
+        Formats and writes nominal data to 'valid_data.csv'.
+
+        Groups individual sensor readings by timestamp and concatenates them into 
+        the required specification format: 'TIMESTAMP;NOMINAL;S1:VAL|S2:VAL'.
+
+        Args:
+            valid_telemetry (pl.DataFrame): Data cleared of any rule violations.
+        """
+        
         if valid_telemetry.height == 0:
             return
 
@@ -37,6 +70,16 @@ class CSVOutputWriter(IOutputWriter):
             grouped.write_csv(f, separator=';', include_header=False)
 
     def write_alarms_batch(self, alarm_telemetry: pl.DataFrame) -> None:
+        """
+        Formats and writes anomalous data to 'alarms.log'.
+
+        Enforces column ordering and writes directly to the target file. Handles 
+        potential missing column exceptions gracefully to prevent pipeline crashes.
+
+        Args:
+            alarm_telemetry (pl.DataFrame): Data flagged as breaching rule thresholds.
+        """
+
         if alarm_telemetry.height == 0:
             return
             

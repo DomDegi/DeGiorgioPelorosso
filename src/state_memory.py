@@ -1,12 +1,22 @@
+"""
+State Tracking Component.
+
+Provides high-speed, local memory solutions for tracking data across the 
+boundaries of discrete batches, ensuring continuity for complex rules.
+"""
+
 from typing import Optional
 from src.interfaces import IStateMemory
 
 class DictStateMemory(IStateMemory):
     """
-    In-memory implementation of the state tracker using Python dictionaries.
-    Perfect for High-Performance Computing (HPC) as read/write access is O(1).
+    In-memory implementation of the state tracker using standard Python dictionaries.
+    
+    Designed specifically for Single-Node High-Performance Computing (HPC). Using 
+    dictionaries provides O(1) read/write access times, minimizing synchronization bottlenecks.
     """
     def __init__(self):
+        """Initializes the underlying data structures for streaks and step values."""
         # Data structure: { "rule_id_sensor_id": integer_count }
         self._consecutive_counts = {}
         
@@ -16,7 +26,16 @@ class DictStateMemory(IStateMemory):
     def _make_key(self, rule_id: str, sensor_id: str) -> str:
         """
         Private helper to create a unique dictionary key.
-        Prevents collisions between different rules monitoring the same sensor.
+        
+        Prevents collisions in memory between different rules that might be 
+        monitoring the exact same sensor.
+
+        Args:
+            rule_id (str): The unique rule identifier.
+            sensor_id (str): The unique sensor identifier.
+
+        Returns:
+            str: A combined unique key format.
         """
         return f"{rule_id}_{sensor_id}"
 

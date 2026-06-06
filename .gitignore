@@ -31,6 +31,9 @@ inputs/csv_input/export_*X.csv
 # Ignores local output directory
 output/
 
+# Ignores pdoc documentation outputs
+docs/pdocs/
+
 # Ignores slurms outputs
 # slurm-*.out
 

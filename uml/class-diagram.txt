@@ -1,65 +1,111 @@
 @startuml
-skinparam monochrome true
-skinparam DefaultFontName Arial
+
+scale 0.72
+skinparam backgroundColor transparent
+
+' Visual Styling for a Radial "Star" Presentation
 skinparam classAttributeIconSize 0
+skinparam monochrome false
+skinparam shadowing false
+skinparam roundcorner 5
+skinparam nodesep 60
+skinparam ranksep 70
 
-title Class Diagram: AstraLog-HPC (Batch Processing Architecture)
-
-class BatchOrchestrator {
-    - reader : TelemetryReader
-    - engine : RulesEngine
-    - writer : OutputWriter
-    + __init__(reader: TelemetryReader, engine: RulesEngine, writer: OutputWriter)
-    + run_batch_job(stream_path: str, batch_size: int) : void
+' Define colors
+skinparam class {
+    BackgroundColor White
+    ArrowColor #2C3E50
+    BorderColor #2C3E50
 }
 
-class TelemetryReader {
-    - sensors_config : dict
-    - stream_file_path : str
-    + __init__(sensors_yaml_path: str)
-    + extract_batch(batch_size: int) : DataFrame
+skinparam interface {
+    BackgroundColor #F8F9F9
+    BorderColor #27AE60
 }
 
-class RulesEngine {
-    - rules_config : dict
-    - state_memory : StateMemory
-    + __init__(rules_json_path: str)
-    + evaluate_rules(chunk: DataFrame) : Tuple<DataFrame, DataFrame>
-    - evaluate_simple_condition(chunk: DataFrame, rule: dict) : DataFrame
-    - evaluate_stateful_condition(chunk: DataFrame, rule: dict) : DataFrame
+' ==========================================
+' THE CENTRAL HUB
+' ==========================================
+class Orchestrator <<Module>> {
+    + orchestrator(batch_size, input, output, rules, sensors): void
 }
 
-class StateMemory {
-    - consecutive_counts : dict
-    + __init__()
-    + increment_consecutive_count(rule_id: str, sensor_id: str) : int
-    + reset_consecutive_count(rule_id: str, sensor_id: str) : void
-    + get_current_count(rule_id: str, sensor_id: str) : int
+' ==========================================
+' ABSTRACT INTERFACES (The Inner Ring)
+' ==========================================
+interface ITelemetryReader {
+    + extract_batch(batch_size: int): pl.DataFrame
 }
 
-class OutputWriter {
-    - valid_output_path : str
-    - alarms_output_path : str
-    + __init__(valid_csv: str, alarms_log: str)
-    + write_valid_chunk(valid_data: DataFrame) : void
-    + write_alarms_chunk(alarm_data: DataFrame) : void
+interface IRulesEngine {
+    + evaluate_rules(batch: pl.DataFrame): Tuple
 }
 
-' Define Relationships
-BatchOrchestrator --> TelemetryReader : Uses
-BatchOrchestrator --> RulesEngine : Uses
-BatchOrchestrator --> OutputWriter : Uses
-RulesEngine --> StateMemory : Uses
+interface IStateMemory {
+    + get_current_count(rule_id, sensor_id): int
+    + set_consecutive_count(...)
+    + get_last_value(...)
+    + set_last_value(...)
+}
 
-note right of BatchOrchestrator
-  Acts as the main entry point (job.sh).
-  Loops through the CSV until EOF.
-end note
+interface IOutputWriter {
+    + write_valid_batch(valid_data: pl.DataFrame): void
+    + write_alarms_batch(alarm_data: pl.DataFrame): void
+}
 
-note right of RulesEngine
-  Returns a Tuple containing:
-  [0] Valid DataFrame
-  [1] Alarms DataFrame
-end note
+' ==========================================
+' CONCRETE IMPLEMENTATIONS (The Outer Ring)
+' ==========================================
+class CSVTelemetryReader {
+    - _buffer: pl.DataFrame
+    - _batched_reader: BatchedCsvReader
+    + extract_batch(batch_size: int): pl.DataFrame
+}
+
+class PolarsRulesEngine {
+    - rules: list
+    + evaluate_rules(batch: pl.DataFrame): Tuple
+}
+
+class DictStateMemory {
+    - _consecutive_counts: dict
+    - _last_values: dict
+    + get_current_count(rule_id, sensor_id): int
+    + set_consecutive_count(...)
+    + get_last_value(...)
+    + set_last_value(...)
+}
+
+class CSVOutputWriter {
+    - valid_file_path: str
+    - alarms_file_path: str
+    + write_valid_batch(valid_data: pl.DataFrame): void
+    + write_alarms_batch(alarm_data: pl.DataFrame): void
+}
+
+' ==========================================
+' RADIAL RELATIONSHIPS & ROUTING (The Star)
+' ==========================================
+
+' 1. UP SPOKE: Reader
+Orchestrator -up-> ITelemetryReader : " Ingests via"
+CSVTelemetryReader .right.|> ITelemetryReader
+
+' 2. DOWN SPOKE: Rules Engine
+Orchestrator -down-> IRulesEngine : " Evaluates via"
+PolarsRulesEngine .up.|> IRulesEngine
+
+' 3. RIGHT SPOKE: State Memory
+Orchestrator -right-> IStateMemory : " Initializes"
+DictStateMemory .down.|> IStateMemory
+
+' 4. LEFT SPOKE: Writer
+Orchestrator -left-> IOutputWriter : " Exports via"
+CSVOutputWriter .up.|> IOutputWriter
+
+' 5. CROSS-DEPENDENCY (Outer Ring to Inner Ring)
+' Using "o-up->" fights the gravity of Graphviz, forcing IStateMemory to stay 
+' on the middle horizontal plane instead of being dragged to the bottom.
+PolarsRulesEngine o-up-> IStateMemory : " Tracks state via"
 
 @enduml
