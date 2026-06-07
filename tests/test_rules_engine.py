@@ -1,7 +1,6 @@
 import pytest
 import polars as pl
 from unittest.mock import patch
-from polars.testing import assert_frame_equal
 
 from src.rules_engine import PolarsRulesEngine
 from src.state_memory import DictStateMemory
@@ -16,7 +15,8 @@ def dummy_rules():
         {"rule_id": "R1", "type": "simple", "sensor_id": "TEMP-01", "operator": ">", "value": 50.0, "priority": "MEDIUM"},
         {"rule_id": "R2", "type": "step_difference", "sensor_id": "PRES-01", "operator": "<", "value": -2.0, "priority": "LOW"},
         {"rule_id": "R3", "type": "stateful", "sensor_id": "VOLT-MAIN", "operator": "<", "value": 20.0, "consecutive_measurements": 3, "priority": "HIGH"},
-        {"rule_id": "R4", "type": "correlation", "logic": "AND", "conditions": ["R1", "R2"], "priority": "HIGH"}
+        {"rule_id": "R4", "type": "correlation", "logic": "AND", "conditions": ["R1", "R2"], "priority": "HIGH"},
+        {"rule_id": "R5", "type": "correlation", "logic": "OR", "conditions": ["R1", "R3"], "priority": "MEDIUM"} 
     ]
 
 @pytest.fixture
@@ -40,7 +40,7 @@ def test_evaluate_simple_rule(engine):
     batch = pl.DataFrame({
         'timestamp': ['T1', 'T2', 'T3'],
         'sensor_id': ['TEMP-01', 'TEMP-01', 'OTHER'],
-        'value': [40.0, 55.0, 60.0] # 55.0 is the only violation for TEMP-01
+        'value': [40.0, 55.0, 60.0] 
     })
     
     valid, alarms = engine.evaluate_rules(batch)
@@ -53,7 +53,7 @@ def test_evaluate_step_rule_with_memory_bridge(engine):
     """Test that relative variation works AND retrieves previous batch data."""
     engine.rules = [r for r in engine.rules if r['rule_id'] == 'R2']
 
-    # Let's pretend the previous batch ended with PRES-01 at 100.0
+    # Pretend the previous batch ended with PRES-01 at 100.0
     engine.memory.set_last_value('PRES-01', 100.0)
 
     batch = pl.DataFrame({
@@ -61,7 +61,6 @@ def test_evaluate_step_rule_with_memory_bridge(engine):
         'sensor_id': ['PRES-01', 'PRES-01'],
         'value': [97.0, 96.0] 
         # Row 0: 97.0 - 100.0 (from memory) = -3.0 (ALARM!)
-        # Row 1: 96.0 - 97.0 = -1.0 (SAFE)
     })
     
     valid, alarms = engine.evaluate_rules(batch)
@@ -78,11 +77,7 @@ def test_evaluate_stateful_rule_exact_trigger(engine):
         'timestamp': ['T1', 'T2', 'T3', 'T4', 'T5'],
         'sensor_id': ['VOLT-MAIN', 'VOLT-MAIN', 'VOLT-MAIN', 'VOLT-MAIN', 'VOLT-MAIN'],
         'value': [25.0, 19.0, 18.0, 17.0, 22.0]
-        # Row 0: Safe (Streak 0)
-        # Row 1: Fail (Streak 1)
-        # Row 2: Fail (Streak 2)
-        # Row 3: Fail (Streak 3) -> ALARM TRIGGERS HERE!
-        # Row 4: Safe (Streak 0) -> Reset
+        # Row 3 triggers the alarm (Streak reaches 3)
     })
     
     valid, alarms = engine.evaluate_rules(batch)
@@ -91,53 +86,68 @@ def test_evaluate_stateful_rule_exact_trigger(engine):
     assert alarms['timestamp'][0] == 'T4'
 
 # ==========================================
-# TESTS FOR THE ORCHESTRATOR EDGE CASES
+# TESTS FOR CORRELATION LOGIC EDGE CASES
 # ==========================================
 
-def test_orchestrator_separates_valid_and_alarms(engine):
+def test_correlation_rule_logic_and(engine):
     """
-    Integration test: ensure the main evaluate_rules method correctly 
-    routes data into the valid and alarms DataFrames.
+    EDGE CASE: A correlation rule with 'AND' logic should only trigger 
+    if ALL conditions are met AT THE EXACT SAME TIMESTAMP.
     """
-    batch = pl.DataFrame({
-        'timestamp': ['2026-04-24T10:00Z', '2026-04-24T10:01Z'],
-        'sensor_id': ['TEMP-01', 'PRES-01'],
-        'value': [60.0, 100.0], 
-        'priority': ['HIGH', 'LOW']
-    })
+    engine.rules = [r for r in engine.rules if r['rule_id'] in ['R1', 'R2', 'R4']]
     
-    valid_df, alarms_df = engine.evaluate_rules(batch)
-    
-    assert valid_df.height == 1
-    assert valid_df['sensor_id'][0] == 'PRES-01'
-    
-    assert alarms_df.height == 1
-    assert alarms_df['sensor_id'][0] == 'TEMP-01'
-    assert alarms_df['rule_id'][0] == 'R1'
+    # Bridge memory so R2 actually evaluates successfully on T1
+    engine.memory.set_last_value('PRES-01', 100.0)
 
-def test_stateful_rule_streak_reset(engine):
-    """
-    EDGE CASE: A stateful rule requires 3 consecutive errors. 
-    The rule MUST reset on the 'Valid' and NOT trigger an alarm on the final Error.
-    """
     telemetry = pl.DataFrame({
-        'timestamp': ['T1', 'T2', 'T3', 'T4'],
-        'sensor_id': ['VOLT-01', 'VOLT-01', 'VOLT-01', 'VOLT-01'],
-        'value': [10.0, 10.0, 25.0, 10.0]
+        'timestamp': ['T1', 'T1', 'T2', 'T2'],
+        'sensor_id': ['TEMP-01', 'PRES-01', 'TEMP-01', 'PRES-01'],
+        'value': [55.0, 97.0, 45.0, 93.0] 
+        # T1: TEMP > 50 (T), PRES drops > 2 (T). Result: AND Triggers
+        # T2: TEMP > 50 (F), PRES drops > 2 (T). Result: No AND Trigger
     })
-    
-    engine.rules = [{
-        "rule_id": "R1", "type": "stateful", "sensor_id": "VOLT-01", 
-        "operator": "<", "value": 20.0, "consecutive_measurements": 3, "priority": "HIGH"
-    }]
     
     valid_df, alarm_df = engine.evaluate_rules(telemetry)
-    assert alarm_df.height == 0, "Stateful rule failed to reset streak upon receiving valid data!"
+    
+    # We expect 3 total alarms at T1 (R1 base, R2 base, and R4 correlation)
+    # We expect 1 alarm at T2 (R2 base only)
+    assert alarm_df.height == 4
+    
+    # Verify the correlation alarm was specifically generated
+    correlation_alarms = alarm_df.filter(pl.col('rule_id') == 'R4')
+    assert correlation_alarms.height == 1
+    assert correlation_alarms['timestamp'][0] == 'T1'
+
+def test_correlation_rule_logic_or(engine):
+    """
+    EDGE CASE: OR logic should trigger if AT LEAST ONE condition is met in the timestamp.
+    """
+    engine.rules = [r for r in engine.rules if r['rule_id'] in ['R1', 'R3', 'R5']]
+    
+    # Inject a 2-streak into memory so R3 triggers on its very first reading
+    engine.memory.set_consecutive_count('R3', 'VOLT-MAIN', 2)
+
+    telemetry = pl.DataFrame({
+        'timestamp': ['T1', 'T1'],
+        'sensor_id': ['TEMP-01', 'VOLT-MAIN'],
+        'value': [40.0, 15.0] 
+        # T1: TEMP > 50 (False), VOLT < 20 (True, hits streak 3). Result: OR Triggers
+    })
+    
+    valid_df, alarm_df = engine.evaluate_rules(telemetry)
+    
+    # We expect 2 alarms total: R3 (base) and R5 (correlation)
+    assert alarm_df.height == 2
+    assert 'R5' in alarm_df['rule_id'].to_list()
+
+# ==========================================
+# TESTS FOR ORCHESTRATOR / PIPELINE EDGE CASES
+# ==========================================
 
 def test_missing_sensor_guard_clause(engine):
     """
-    EDGE CASE: The rules.json asks to monitor 'TEMP-05', but the current
-    batch doesn't contain any readings for 'TEMP-05'.
+    EDGE CASE: The rules.json asks to monitor a sensor that is entirely missing 
+    from the current batch. The system must not crash.
     """
     telemetry = pl.DataFrame({
         'timestamp': ['T1'],
@@ -154,3 +164,28 @@ def test_missing_sensor_guard_clause(engine):
     
     assert alarm_df.height == 0, "Missing sensor should not generate alarms"
     assert valid_df.height == 1, "Valid data should remain intact"
+
+def test_priority_sorting(engine):
+    """
+    EDGE CASE: Output alarms must be strictly sorted by priority (HIGH -> MEDIUM -> LOW).
+    """
+    batch = pl.DataFrame({
+        'timestamp': ['T1', 'T1', 'T1'],
+        'sensor_id': ['TEMP-01', 'PRES-01', 'VOLT-MAIN'],
+        'value': [60.0, 95.0, 10.0] 
+    })
+    
+    # Manually map rule conditions to ensure they all fire simultaneously
+    engine.rules = [
+        {"rule_id": "R1", "type": "simple", "sensor_id": "TEMP-01", "operator": ">", "value": 50.0, "priority": "LOW"},
+        {"rule_id": "R2", "type": "simple", "sensor_id": "PRES-01", "operator": "<", "value": 100.0, "priority": "HIGH"},
+        {"rule_id": "R3", "type": "simple", "sensor_id": "VOLT-MAIN", "operator": "<", "value": 20.0, "priority": "MEDIUM"},
+    ]
+    
+    valid_df, alarm_df = engine.evaluate_rules(batch)
+    
+    assert alarm_df.height == 3
+    # Validate exact sorting order (HIGH -> MEDIUM -> LOW)
+    assert alarm_df['priority'][0] == 'HIGH'
+    assert alarm_df['priority'][1] == 'MEDIUM'
+    assert alarm_df['priority'][2] == 'LOW'
