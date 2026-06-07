@@ -10,7 +10,13 @@ import os
 import logging
 import argparse
 import time
+import yaml
 from src.orchestrator import orchestrator
+
+from src.reader import CSVTelemetryReader
+from src.rules_engine import PolarsRulesEngine
+from src.writer import CSVOutputWriter
+from src.state_memory import DictStateMemory
 
 # Ensure the default output directory exists for the logger
 os.makedirs("output", exist_ok=True)
@@ -55,14 +61,25 @@ def main() -> None:
     start_time = time.perf_counter()
     
     logger.info("Initializing AstraLog-HPC...")
+
+    # Parse sensor config once to establish the total sensor count for safety bounds
+    with open(args.sensors_path, 'r') as f:
+        sensor_config = yaml.safe_load(f)
+        total_sensors = len(sensor_config['sensors'])
+
+    # Instantiate concrete classes (Composition Root)
+    memory = DictStateMemory()
+    reader = CSVTelemetryReader(sensors_yaml_path=args.sensors_path, csv_path=args.input_path)
+    rules_engine = PolarsRulesEngine(rules_json_path=args.rules_path, memory=memory)
+    writer = CSVOutputWriter(output_path=args.output_path, clean_start=True)
     
-    # Call the orchestrator, passing ALL required arguments
+    # Call the orchestrator, passing ALL required dependencies (Dependency Injection)
     orchestrator(
+        reader=reader,
+        rules_engine=rules_engine,
+        writer=writer,
         batch_size=args.batch_size, 
-        input_path=args.input_path,
-        output_path=args.output_path,
-        rules_path=args.rules_path,
-        sensors_path=args.sensors_path
+        total_sensors=total_sensors
     )
     
     end_time = time.perf_counter()

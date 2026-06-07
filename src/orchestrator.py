@@ -7,34 +7,27 @@ from ingestion, through evaluation, to exportation.
 """
 
 import polars as pl
-import yaml
 import logging
 
 # 1. Import the Interfaces (Abstract Base Classes)
-from src.interfaces import ITelemetryReader, IRulesEngine, IOutputWriter, IStateMemory
-
-# 2. Import Concrete Implementations
-from src.reader import CSVTelemetryReader
-from src.rules_engine import PolarsRulesEngine
-from src.writer import CSVOutputWriter
-from src.state_memory import DictStateMemory
+from src.interfaces import ITelemetryReader, IRulesEngine, IOutputWriter
 
 logger = logging.getLogger(__name__)
 
-def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path: str, sensors_path: str) -> None:
+def orchestrator(reader: ITelemetryReader, rules_engine: IRulesEngine, writer: IOutputWriter, batch_size: int, total_sensors: int) -> None:
     """
     Main orchestration loop that ties the system components together.
     
-    It initializes the Reader, Rules Engine, State Memory, and Writer. It also enforces 
+    It relies on injected components to process telemetry data and enforces 
     critical safety constraints to ensure Out-Of-Memory (OOM) protection and prevents 
     timestamp splitting across batches.
 
     Args:
+        reader (ITelemetryReader): The injected telemetry reader component.
+        rules_engine (IRulesEngine): The injected rules engine component.
+        writer (IOutputWriter): The injected output writer component.
         batch_size (int): The user-requested maximum rows per batch.
-        input_path (str): Path to the input telemetry CSV.
-        output_path (str): Directory path to save output results and logs.
-        rules_path (str): Path to the rules JSON configuration.
-        sensors_path (str): Path to the sensors YAML configuration.
+        total_sensors (int): Total number of active sensors for safe chunk alignment.
 
     Notes:
         - **OOM Protection**: Hard-caps the batch size to 5,000,000 rows.
@@ -57,10 +50,6 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
     # ---------------------------------------------------------
     # SAFETY FIX 2: Ensure batch_size is a multiple of total sensors
     # ---------------------------------------------------------
-    with open(sensors_path, 'r') as f:
-        sensor_config = yaml.safe_load(f)
-        total_sensors = len(sensor_config['sensors'])
-    
     safe_batch_size = (batch_size // total_sensors) * total_sensors
     
     if safe_batch_size == 0:
@@ -70,16 +59,8 @@ def orchestrator(batch_size: int, input_path: str, output_path: str, rules_path:
         logger.warning(f"Requested batch_size ({batch_size}) splits timestamps. Auto-adjusting to safe multiple: {safe_batch_size}")
         batch_size = safe_batch_size
     # ---------------------------------------------------------
-    logger.info(f"Configuration loaded -> Batch Size: {batch_size} | Input: {input_path} | Output: {output_path}")
+    logger.info(f"Configuration loaded -> Batch Size: {batch_size}")
 
-    # --- COMPONENT INSTANTIATION ---
-    memory: IStateMemory = DictStateMemory()
-    
-    # Notice we use the original argument names mapped to our correct Polars classes
-    reader: ITelemetryReader = CSVTelemetryReader(sensors_yaml_path=sensors_path, csv_path=input_path)
-    rules_engine: IRulesEngine = PolarsRulesEngine(rules_json_path=rules_path, memory=memory)
-    writer: IOutputWriter = CSVOutputWriter(output_path=output_path, clean_start=True)
-    
     batch_counter = 0
     total_alarms = 0
     

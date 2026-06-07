@@ -1,49 +1,63 @@
-import os
-import tempfile
-import yaml
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
 from src.orchestrator import orchestrator
 
-@pytest.fixture
-def mock_environment():
-    """Sets up fake configuration files to test the Orchestrator safely."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        sensors_path = os.path.join(tmpdir, "sensors.yaml")
-        # Fake YAML with exactly 3 sensors
-        with open(sensors_path, 'w') as f:
-            yaml.dump({'sensors': [{'id': 'S1'}, {'id': 'S2'}, {'id': 'S3'}]}, f)
-            
-        yield tmpdir, sensors_path
-
-@patch("src.orchestrator.CSVTelemetryReader")
-@patch("src.orchestrator.PolarsRulesEngine")
-@patch("src.orchestrator.CSVOutputWriter")
-@patch("src.orchestrator.DictStateMemory")
-def test_batch_auto_alignment(MockMemory, MockWriter, MockEngine, MockReader, mock_environment, caplog):
+def test_batch_auto_alignment(caplog):
     """
     EDGE CASE: The user asks for a batch_size of 10, but there are 3 sensors.
     10 / 3 = 3.33 (Timestamp split!). The orchestrator MUST auto-adjust 
     the batch to 9 to prevent data corruption.
     """
-    tmpdir, sensors_path = mock_environment
+    # 1. Create mock dependencies (Dependency Injection replaces @patch!)
+    mock_reader = MagicMock()
+    mock_engine = MagicMock()
+    mock_writer = MagicMock()
     
     # Setup mock reader to return an empty dataframe immediately to end the loop
-    mock_reader_instance = MockReader.return_value
-    mock_reader_instance.extract_batch.return_value = MagicMock(is_empty=lambda: True, height=0)
+    mock_reader.extract_batch.return_value = MagicMock(is_empty=lambda: True, height=0)
 
-    # Run orchestrator with dangerous batch size (10)
+    # 2. Run orchestrator with dangerous batch size (10) and 3 total sensors
     orchestrator(
+        reader=mock_reader,
+        rules_engine=mock_engine,
+        writer=mock_writer,
         batch_size=10, 
-        input_path="dummy.csv", 
-        output_path=tmpdir, 
-        rules_path="dummy.json", 
-        sensors_path=sensors_path
+        total_sensors=3
     )
     
-    # Verify the warning was printed
-    assert "Requested batch_size (10) splits timestamps" in caplog.text
+    # 3. Verify the warning was printed
+    assert "splits timestamps" in caplog.text
     assert "Auto-adjusting to safe multiple: 9" in caplog.text
     
-    # Verify the Reader was called with the SAFE batch size (9), not 10!
-    mock_reader_instance.extract_batch.assert_called_once_with(9)
+    # 4. Verify the Reader was called with the SAFE batch size (9), not 10!
+    mock_reader.extract_batch.assert_called_once_with(9)
+
+
+def test_oom_protection_and_alignment(caplog):
+    """
+    EDGE CASE: The user asks for a massive batch_size of 10,000,000. 
+    The orchestrator MUST cap this to MAX_SAFE_BATCH (5,000,000) to prevent RAM crashes, 
+    and THEN auto-align it to the nearest multiple of sensors.
+    """
+    mock_reader = MagicMock()
+    mock_engine = MagicMock()
+    mock_writer = MagicMock()
+    
+    mock_reader.extract_batch.return_value = MagicMock(is_empty=lambda: True, height=0)
+
+    # Run orchestrator with 10M rows and 3 total sensors
+    orchestrator(
+        reader=mock_reader,
+        rules_engine=mock_engine,
+        writer=mock_writer,
+        batch_size=10_000_000, 
+        total_sensors=3
+    )
+    
+    # Verify the OOM warning triggered
+    assert "exceeds RAM safety limits" in caplog.text
+    
+    # Calculate the expected safe alignment: 
+    # Cap = 5,000,000
+    # Safe Multiple = (5,000,000 // 3) * 3 = 4,999,998
+    mock_reader.extract_batch.assert_called_once_with(4_999_998)
