@@ -94,7 +94,7 @@ jobs:
 
     - name: Generate HTML Documentation
       run: |
-        pdoc ./src ./tests -o ./_site               # Generate HTML docs for both src and tests, output to _site
+        pdoc ./src ./tests -o ./_site --logo-link https://domdegi.github.io/DeGiorgioPelorosso/index.html --logo "" 
 
         cp ./_site/src.html ./_site/index.html      # Adds a homepage to the generated docs
         

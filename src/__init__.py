@@ -33,6 +33,15 @@ and concrete classes that power the system:
 * **`writer`**: Exports data matching strict ESA string formatting requirements.
 
 ---
+
+### System Safety & Testing
+AstraLog-HPC is built with absolute reliability in mind. We have implemented a comprehensive 
+automated test suite using `pytest` and **Dependency Injection** to verify Out-Of-Memory (OOM) 
+protections, safe chunk alignment, and mathematical correlation logic.
+
+-> **[Click here to view the Automated Test Suite Documentation](tests.html)**
+
+---
 *Developed for the Software Engineering for HPC course (A.Y. 2025-2026).*
 """
 
