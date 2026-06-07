@@ -93,6 +93,8 @@ AI assistants (Gemini) were used primarily as a technical consultant to:
 - Formulate the CI/CD pipeline syntax for GitHub Actions.
 - Profile C-level execution times to identify and eliminate $O(N^2)$ memory-copying bottlenecks during the Pandas-to-Polars migration.
 - Configure SLURM scripts to avoid NFS login-node throttling by mapping container I/O directly to high-speed NVMe cluster scratch space (`$WORK`).
+- Generated pdocs comments for all the src code and after reviewing and making the needed adjustments added them to the code.
+- Added the autonomous generation and deployment of the pdocs to our github actions thanks to the help of gemini and of github copilot.
 
 ---
 
@@ -118,7 +120,7 @@ Our project utilizes a modern, zero-touch CI/CD pipeline built on **GitHub Actio
 1. **Continuous Integration (CI):** Upon every push to the `main` branch, the pipeline spins up a virtual environment, installs dependencies, and runs the `pytest` suite (23 tests).
 2. **Continuous Deployment (CD):** If the tests pass, the pipeline automatically builds a production Docker image using `Dockerfile.prod` and pushes it to the GitHub Container Registry (GHCR).
 3. **HPC Execution:** On the CINECA Galileo100 supercomputer, our `job.sh` SLURM script utilizes **Singularity (Apptainer)** to execute the container. 
-
+Extra. **Python document generation and deployment:** Every new commit or pull request on main tries to regenerate the pdoc and deploy it as an html static website through github pages.
 ### Cluster Operating Procedure (CINECA G100)
 
 To achieve maximum I/O throughput, our `job.sh` script automatically creates an isolated, job-specific scratch directory on the cluster's high-speed `$WORK` filesystem, moving data off the slow network-mounted `$HOME` directory before executing the container.
