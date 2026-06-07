@@ -94,10 +94,11 @@ jobs:
 
     - name: Generate HTML Documentation
       run: |
-        pdoc ./src ./tests -o ./_site
+        pdoc ./src ./tests -o ./_site               # Generate HTML docs for both src and tests, output to _site
+
+        cp ./_site/src.html ./_site/index.html      # Adds a homepage to the generated docs
         
-        # Copy the UML folder into the generated site so images work
-        cp -r uml _site/uml
+        cp -r uml _site/uml                         # Copy the UML folder into the generated site so images work
 
     - name: Upload Pages artifact
       uses: actions/upload-pages-artifact@v3
