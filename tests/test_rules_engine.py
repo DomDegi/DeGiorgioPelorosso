@@ -1,3 +1,13 @@
+"""
+Unit tests for the Polars Rules Engine.
+
+Verifies the mathematical evaluation of the 4 core rule types:
+1. **Simple**: Absolute threshold triggers.
+2. **Step Difference**: Relative variations requiring memory of previous batches.
+3. **Stateful**: Consecutive streak tracking and resetting.
+4. **Correlation**: Complex boolean intersections (AND/OR logic).
+"""
+
 import pytest
 import polars as pl
 from unittest.mock import patch

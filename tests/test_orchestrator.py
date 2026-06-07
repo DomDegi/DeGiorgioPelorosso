@@ -1,3 +1,12 @@
+"""
+Unit tests for the Core Orchestrator.
+
+These tests verify the structural safety mechanisms of the Orchestrator. By utilizing 
+Mock objects and Dependency Injection, we bypass actual file I/O to strictly evaluate 
+the mathematical constraints: Out-Of-Memory (OOM) hard-caps and batch size auto-alignment 
+to prevent timestamp corruption.
+"""
+
 import pytest
 from unittest.mock import MagicMock
 from src.orchestrator import orchestrator
