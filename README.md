@@ -23,8 +23,8 @@ Here you can access the official documentation hub and web interface for the **A
 
 | Name Surname | Person Code | Role / Main Focus | Effort (Hours) |
 | :--- | :--- | :--- | :--- |
-| **Domenico DeGiorgio** | 10854350 | Software Architect, Rules Parallelization Logic, Pytest, CD Pipeline & SLURM job| 80h |
-| **Leonardo Pelorosso** | 10779110 | Use Cases, Domain assumptions, Requirements elicitation, Singularity Container| 80h |
+| **Domenico DeGiorgio** | 10854350 | Software Architect, Rules Parallelization Logic, Pytest, CD Pipeline, SLURM job, pdocs generation and deployment| 80h |
+| **Leonardo Pelorosso** | 10779110 | Use Cases, Domain assumptions, Requirements elicitation, devcontainer setup, CI Pipeline, Singularity Container| 80h |
 
 ---
 
