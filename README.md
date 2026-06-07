@@ -1,7 +1,7 @@
 # AstraLog-HPC: Full Track Implementation
 
 [![CI/CD Pipeline](https://github.com/DomDegi/DeGiorgioPelorosso/actions/workflows/cicd.yml/badge.svg)](https://github.com/DomDegi/DeGiorgioPelorosso/actions/workflows/cicd.yml)
-[![Live Documentation](https://img.shields.io/badge/docs-Live_API_Reference-blue.svg)](https://domdegi.github.io/DeGiorgioPelorosso/)
+[![Live Documentation](https://img.shields.io/badge/docs-Live_API_Reference-blue.svg)](https://domdegi.github.io/DeGiorgioPelorosso/index.html)
 [![Version](https://img.shields.io/badge/version-1.0.0-success.svg)]()
 
 ### **Software Engineering for HPC - A.Y. 2025-2026**
