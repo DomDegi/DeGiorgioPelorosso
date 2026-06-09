@@ -7,20 +7,42 @@ deploy_and_submit:
     - x86_64
     - cpu
     - docker
+  image: alpine:latest
   
+  before_script:
+    # Install the required SSH clients inside the runner container
+    - apk add --no-cache openssh-client bash
+    
+    # Initialize the SSH agent and add your private key
+    - eval $(ssh-agent -s)
+    - echo "$CINECA_SSH_KEY" | base64 -d | tr -d '\r' | ssh-add -
+    
+    # Create the runner's local SSH directory and scan Galileo100 to prevent authenticity prompts
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - ssh-keyscan -H login.g100.cineca.it >> ~/.ssh/known_hosts
+
   script:
-    - echo "Preparing submission..."
-    - cd $CI_PROJECT_DIR
+    - echo "Connecting to Galileo100 login node..."
     
-    - echo "Pulling Singularity container..."
-    - singularity pull --force astralog-hpc.sif docker://ghcr.io/domdegi/astralog-hpc:latest
+    # Ensure the inputs directory exists in your root home folder
+    - ssh $CINECA_USER@login.g100.cineca.it "mkdir -p ~/inputs"
     
-    - echo "Submitting to SLURM queue..."
-    - chmod +x job.sh
-    - sbatch job.sh
+    # Copy the execution scripts directly to your home directory (~)
+    - scp job.sh submit.sh $CINECA_USER@login.g100.cineca.it:~/
     
-    - echo "Checking queue status..."
-    - squeue -u $CINECA_USER
+    # If you have updated json/yaml configuration files in your repository, sync them to ~/inputs/
+    - scp inputs/config/*.json inputs/config/*.yaml $CINECA_USER@login.g100.cineca.it:~/inputs/ || true
+    
+    # Open a secure shell session to execute the deployment script natively on the login node
+    - |
+      ssh $CINECA_USER@login.g100.cineca.it << 'EOF'
+        cd ~
+        chmod +x submit.sh job.sh
+        
+        # Execute the update and queue submission script
+        ./submit.sh
+      EOF
 
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'

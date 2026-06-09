@@ -1,28 +1,21 @@
 #!/bin/bash
 
-# Termina immediatamente lo script se c'è un errore
-set -e
+# Configuration
+IMAGE_NAME="astralog-hpc.sif"
+IMAGE_URL="docker://ghcr.io/domdegi/astralog-hpc:latest"
 
-echo "🚀 Start AstraLog-HPC Orchestrator..."
-echo "========================================="
+echo "Checking for container updates from GHCR..."
 
-# --- CONFIG ---
-BATCH_SIZE=10000
-INPUT_CSV="inputs/csv_input/export_sat_alpha_large_fixed.csv"
-OUTPUT_DIR="output"
-RULES_JSON="inputs/config/Current_rules_sat_alpha.json"
-SENSORS_YAML="inputs/config/Current_sensors_sat_alpha.yaml"
-# ----------------------
+# Pull the image (the --force flag ensures it overwrites the old one with the latest push)
+singularity pull --force $IMAGE_NAME $IMAGE_URL
 
-mkdir -p "$OUTPUT_DIR"
+echo "Container updated successfully."
 
-python3 -m src.main \
-  --batch_size "$BATCH_SIZE" \
-  --input_path "$INPUT_CSV" \
-  --output_path "$OUTPUT_DIR" \
-  --rules_path "$RULES_JSON" \
-  --sensors_path "$SENSORS_YAML"
+echo "Submitting job to Galileo100 SLURM queue..."
 
-echo "========================================="
-echo "Success!"
-echo "Results available in: $OUTPUT_DIR/"
+# Submit the SLURM job
+sbatch job.sh
+
+# Display the user's current queue status
+echo "Current queue status:"
+squeue -u $USER
