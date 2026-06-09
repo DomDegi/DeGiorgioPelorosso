@@ -12,18 +12,21 @@ deploy_to_galileo100:
   before_script:
     - apk add --no-cache openssh-client bash
     - eval $(ssh-agent -s)
+    
+    # BASE64 ENCODED:
     - echo "$CINECA_SSH_KEY" | base64 -d | tr -d '\r' | ssh-add -
+    
+    # DEBUG LINE: It lists the keys currently loaded.
+    - ssh-add -l
+    
     - mkdir -p ~/.ssh
     - chmod 700 ~/.ssh
-    # REMOVED: ssh-keyscan line
 
   script:
     - echo "Runner initialized. Connecting to Galileo100 Login Node..."
     
-    # Added -o StrictHostKeyChecking=no to bypass the load-balancer key mismatch
     - scp -o StrictHostKeyChecking=no job.sh $CINECA_USER@login.g100.cineca.it:~/DegiorgioPelorosso/
     
-    # Added -o StrictHostKeyChecking=no here as well
     - |
       ssh -o StrictHostKeyChecking=no $CINECA_USER@login.g100.cineca.it << 'EOF'
         cd ~/DegiorgioPelorosso
