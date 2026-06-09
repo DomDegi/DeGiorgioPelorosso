@@ -1,26 +1,34 @@
 stages:
-  - deploy
+  - test_on_hpc
 
-deploy_to_galileo100:
-  stage: deploy
+verify_galileo100_architecture:
+  stage: test_on_hpc
   tags:
     - x86_64
     - cpu
     - docker
   
+  # 1. We use your Docker image DIRECTLY as the runner environment!
+  # No need to pull Singularity, we are already inside your custom container.
+  image: ghcr.io/domdegi/astralog-hpc:latest
+  
   script:
-    - echo "Runner initialized. Executing directly on the Galileo100 CI/CD node..."
+    - echo "Runner initialized. Executing directly inside the astralog-hpc container..."
     - cd $CI_PROJECT_DIR
     
-    - echo "Pulling the latest container image from GHCR..."
-    - singularity pull --force astralog-hpc.sif docker://ghcr.io/domdegi/astralog-hpc:latest
+    - mkdir -p output_ci
     
-    - echo "Making job script executable and submitting to Slurm..."
-    - chmod +x job.sh
-    - sbatch job.sh
-    
-    - echo "Deployment successful! Current queue:"
-    - squeue -u $CINECA_USER
+    # 2. We run the Python code directly, bypassing Slurm.
+    # CRITICAL: We use the small fixture data so it finishes well under CINECA's 10-minute limit.
+    - echo "Running pipeline test on Galileo100 hardware..."
+    - python3 -m src.main \
+        --batch_size 1000 \
+        --input_path tests/fixtures/test_input.csv \
+        --output_path output_ci \
+        --rules_path tests/fixtures/test_rules.json \
+        --sensors_path tests/fixtures/test_sensors.yaml
+        
+    - echo "Success! The codebase runs perfectly on Galileo100."
 
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
