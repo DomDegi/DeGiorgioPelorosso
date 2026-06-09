@@ -3,7 +3,6 @@ stages:
 
 deploy_to_galileo100:
   stage: deploy
-  # Mandatory CINECA tags to route this to the dedicated Galileo100 runner node
   tags:
     - x86_64
     - cpu
@@ -11,31 +10,25 @@ deploy_to_galileo100:
   image: alpine:latest
   
   before_script:
-    # 1. Install SSH tools inside the Alpine runner
     - apk add --no-cache openssh-client bash
-    
-    # 2. Start SSH agent and DECRYPT the Base64 SSH key on the fly
     - eval $(ssh-agent -s)
     - echo "$CINECA_SSH_KEY" | base64 -d | tr -d '\r' | ssh-add -
-    
-    # 3. Add Galileo100 to known hosts to bypass the yes/no prompt
     - mkdir -p ~/.ssh
     - chmod 700 ~/.ssh
-    - ssh-keyscan -H login.g100.cineca.it >> ~/.ssh/known_hosts
+    # REMOVED: ssh-keyscan line
 
   script:
     - echo "Runner initialized. Connecting to Galileo100 Login Node..."
     
-    # 4. Transfer the updated job.sh to the cluster using SCP
-    - scp job.sh $CINECA_USER@login.g100.cineca.it:~/DegiorgioPelorosso/
+    # Added -o StrictHostKeyChecking=no to bypass the load-balancer key mismatch
+    - scp -o StrictHostKeyChecking=no job.sh $CINECA_USER@login.g100.cineca.it:~/DegiorgioPelorosso/
     
-    # 5. SSH into the cluster, pull the Singularity image, and submit the job
+    # Added -o StrictHostKeyChecking=no here as well
     - |
-      ssh $CINECA_USER@login.g100.cineca.it << 'EOF'
+      ssh -o StrictHostKeyChecking=no $CINECA_USER@login.g100.cineca.it << 'EOF'
         cd ~/DegiorgioPelorosso
         
         echo "Pulling the latest container image from GHCR..."
-        # We use --force to overwrite the old .sif file with the new one
         singularity pull --force astralog-hpc.sif docker://ghcr.io/domdegi/astralog-hpc:latest
         
         echo "Making job script executable and submitting to Slurm..."
@@ -47,5 +40,4 @@ deploy_to_galileo100:
       EOF
 
   rules:
-    # Only run this deployment pipeline when code is pushed to the main branch
     - if: '$CI_COMMIT_BRANCH == "main"'

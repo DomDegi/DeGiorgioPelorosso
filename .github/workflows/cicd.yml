@@ -32,29 +32,6 @@ jobs:
     - name: Build HTML Documentation
       run: |
         pdoc ./src -o ./docs/pdocs
-
-  mirror-to-gitlab:
-    needs: test # Wait for tests to pass before deploying
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0 # Required to mirror all history
-
-      - name: Push to CINECA GitLab
-        env:
-          # CINECA USERNAME
-          GITLAB_USERNAME: "ddegiorg" 
-          GITLAB_TOKEN: ${{ secrets.CINECA_GITLAB_TOKEN }}
-        run: |
-          # Make sure the URL ends with your actual repo name: DeGiorgioPelorosso-deploy.git
-          git remote add gitlab https://oauth2:$GITLAB_TOKEN@gitlab.hpc.cineca.it/$GITLAB_USERNAME/DeGiorgioPelorosso-deploy.git
-          
-          # Force push all branches and tags to GitLab
-          git push gitlab --all --force
-          git push gitlab --tags --force
   
   # CD JOB: Build and push the Docker image
   build-and-push-container:
@@ -130,3 +107,26 @@ jobs:
 
     - name: Deploy to GitHub Pages
       uses: actions/deploy-pages@v4
+
+  mirror-to-gitlab:
+    needs: test # Wait for tests to pass before deploying
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # Required to mirror all history
+
+      - name: Push to CINECA GitLab
+        env:
+          # CINECA USERNAME
+          GITLAB_USERNAME: "ddegiorg" 
+          GITLAB_TOKEN: ${{ secrets.CINECA_GITLAB_TOKEN }}
+        run: |
+          # Make sure the URL ends with your actual repo name: DeGiorgioPelorosso-deploy.git
+          git remote add gitlab https://oauth2:$GITLAB_TOKEN@gitlab.hpc.cineca.it/$GITLAB_USERNAME/DeGiorgioPelorosso-deploy.git
+          
+          # Force push all branches and tags to GitLab
+          git push gitlab --all --force
+          git push gitlab --tags --force
