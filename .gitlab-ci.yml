@@ -18,15 +18,9 @@ verify_galileo100_architecture:
     
     - mkdir -p output_ci
     
-    # 2. We run the Python code directly, bypassing Slurm.
-    # CRITICAL: We use the small fixture data so it finishes well under CINECA's 10-minute limit.
     - echo "Running pipeline test on Galileo100 hardware..."
-    - python3 -m src.main \
-        --batch_size 1000 \
-        --input_path tests/fixtures/test_input.csv \
-        --output_path output_ci \
-        --rules_path tests/fixtures/test_rules.json \
-        --sensors_path tests/fixtures/test_sensors.yaml
+    # Writing it entirely on one line prevents any Bash line-continuation errors
+    - python3 -m src.main --batch_size 1000 --input_path tests/fixtures/test_input.csv --output_path output_ci --rules_path tests/fixtures/test_rules.json --sensors_path tests/fixtures/test_sensors.yaml
         
     - echo "Success! The codebase runs perfectly on Galileo100."
 
