@@ -7,12 +7,9 @@ deploy_to_galileo100:
     - x86_64
     - cpu
     - docker
-  image: alpine:latest
   
   script:
     - echo "Runner initialized. Executing directly on the Galileo100 CI/CD node..."
-    
-    # GitLab automatically clones your repo to $CI_PROJECT_DIR
     - cd $CI_PROJECT_DIR
     
     - echo "Pulling the latest container image from GHCR..."
