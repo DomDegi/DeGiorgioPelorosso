@@ -17,14 +17,14 @@ deploy_to_galileo100:
     - chmod 700 ~/.ssh
 
   script:
-    - echo "Runner initialized. Connecting directly to Galileo100 login01..."
+    - echo "Runner initialized. Connecting to Galileo100 main login node..."
     
-    # 1. Point explicitly to login01
-    - scp -o StrictHostKeyChecking=no job.sh $CINECA_USER@login01.g100.cineca.it:~/DegiorgioPelorosso/
+    # 1. Reverted to login.g100.cineca.it and added -v for detailed debug logging
+    - scp -v -o StrictHostKeyChecking=no job.sh $CINECA_USER@login.g100.cineca.it:~/DegiorgioPelorosso/
     
-    # 2. Execute on login01
+    # 2. Execute on login node
     - |
-      ssh -o StrictHostKeyChecking=no $CINECA_USER@login01.g100.cineca.it << 'EOF'
+      ssh -o StrictHostKeyChecking=no $CINECA_USER@login.g100.cineca.it << 'EOF'
         cd ~/DegiorgioPelorosso
         
         echo "Pulling the latest container image from GHCR..."
