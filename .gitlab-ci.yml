@@ -1,79 +1,56 @@
 stages:
-  - deploy
+  - build_container
+  - publish
 
-deploy_singularity:
-  stage: deploy
+build_apptainer:
+  stage: build_container
+  image:
+    name: kaczmarj/apptainer
+    entrypoint: [""]
   tags:
     - x86_64
     - cpu
     - docker
-  image: alpine:latest
-
-  variables:
-    GHCR_IMAGE: "ghcr.io/domdegi/astralog-hpc:latest"
-    SIF_PATH: "$HOME/astralog-hpc.sif"
-    REMOTE_DEPLOY_SCRIPT: "/tmp/ci_deploy_$CI_PIPELINE_ID.sh"
-    # Opzioni SSH condivise: niente strict checking, niente prompt interattivi,
-    # timeout ragionevole. Usato in ogni comando ssh/scp del job.
-    SSH_OPTS: "-o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=15"
-
-  before_script:
-    - apk add --no-cache openssh-client bash
-    - eval $(ssh-agent -s)
-    - echo "$CINECA_SSH_KEY" | base64 -d | tr -d '\r' | ssh-add -
-    # Niente ssh-keyscan — SSH_OPTS con StrictHostKeyChecking=no gestisce tutto
-    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
-
-  script:
-    - echo "==> Sincronizzazione file di configurazione e script..."
-    - ssh $SSH_OPTS $CINECA_USER@login.g100.cineca.it "mkdir -p ~/inputs/config ~/inputs/csv_input ~/logs"
-    - scp $SSH_OPTS job.sh $CINECA_USER@login.g100.cineca.it:~/
-    - scp $SSH_OPTS -r inputs/config/ $CINECA_USER@login.g100.cineca.it:~/inputs/ 2>/dev/null || true
-    - scp $SSH_OPTS -r inputs/csv_input/ $CINECA_USER@login.g100.cineca.it:~/inputs/ 2>/dev/null || true
-
-    - |
-      cat > /tmp/deploy_remote.sh << EOF
-      #!/bin/bash
-      set -e
-
-      echo "[1/4] Caricamento modulo singularity..."
-      module load singularity 2>/dev/null || module load apptainer 2>/dev/null || true
-
-      if command -v apptainer &>/dev/null; then
-        SING_CMD="apptainer"
-      elif command -v singularity &>/dev/null; then
-        SING_CMD="singularity"
-      else
-        echo "ERRORE: né apptainer né singularity trovati" >&2
-        exit 1
-      fi
-      echo "   Usando: \$SING_CMD"
-
-      echo "[2/4] Login su GHCR e pull immagine come SIF..."
-      echo "$GHCR_TOKEN" | \$SING_CMD registry login ghcr.io --username "domdegi" --password-stdin
-      \$SING_CMD pull --force "docker://$GHCR_IMAGE" "$SIF_PATH"
-      echo "   Immagine salvata: \$(ls -lh $SIF_PATH | awk '{print \$5, \$9}')"
-
-      echo "[3/4] Permessi job.sh e submit SLURM..."
-      chmod +x ~/job.sh
-      cd ~
-      JOB_ID=\$(sbatch job.sh | awk '{print \$NF}')
-      echo "   Job submesso con ID: \$JOB_ID"
-      echo "   Monitora con:  squeue -j \$JOB_ID"
-
-      echo "[4/4] Deploy completato."
-      EOF
-
-    - scp $SSH_OPTS /tmp/deploy_remote.sh $CINECA_USER@login.g100.cineca.it:$REMOTE_DEPLOY_SCRIPT
-    - ssh -tt $SSH_OPTS $CINECA_USER@login.g100.cineca.it "bash $REMOTE_DEPLOY_SCRIPT"
-
-  after_script:
-    - apk add --no-cache openssh-client bash
-    - eval $(ssh-agent -s)
-    - echo "$CINECA_SSH_KEY" | base64 -d | tr -d '\r' | ssh-add -
-    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
-    - ssh -o StrictHostKeyChecking=no -o BatchMode=yes $CINECA_USER@login.g100.cineca.it
-        "rm -f $REMOTE_DEPLOY_SCRIPT" 2>/dev/null || true
-
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
+  script:
+    - echo "Pulling Docker image from GHCR and converting to Singularity .sif..."
+    - mkdir -p build
+    
+    # We use 'pull' directly on the GHCR docker image instead of 'build' with a .def file
+    # This automatically converts the Docker layers into a flat Singularity image
+    - apptainer pull --force build/astralog-hpc.sif docker://ghcr.io/domdegi/astralog-hpc:latest
+  artifacts:
+    paths:
+      - build/astralog-hpc.sif
+    expire_in: 1 hour
+
+publish_sif:
+  stage: publish
+  image: curlimages/curl:latest
+  tags:
+    - x86_64
+    - cpu
+    - docker
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  dependencies:
+    - build_apptainer
+  script:
+    - echo "Uploading .sif file to GitLab Package Registry..."
+    - VERSION="${CI_COMMIT_SHORT_SHA}"
+    
+    # Uploads the specific commit version
+    - |
+      curl --fail \
+           --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+           --upload-file build/astralog-hpc.sif \
+           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/astralog-sif/${VERSION}/astralog-hpc.sif"
+    
+    - echo "Updating the 'latest' tag..."
+    # Uploads the 'latest' version to easily overwrite the old one
+    - |
+      curl --fail \
+           --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+           --upload-file build/astralog-hpc.sif \
+           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/astralog-sif/latest/astralog-hpc.sif"
