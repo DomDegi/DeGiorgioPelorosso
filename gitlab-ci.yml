@@ -1,0 +1,113 @@
+stages:
+  - deploy
+
+deploy_singularity:
+  stage: deploy
+  tags:
+    - x86_64
+    - cpu
+    - docker
+  image: alpine:latest
+
+  variables:
+    GHCR_IMAGE: "ghcr.io/domdegi/astralog-hpc:latest"
+    SIF_PATH: "$HOME/astralog-hpc.sif"
+    REMOTE_DEPLOY_SCRIPT: "/tmp/ci_deploy_$CI_PIPELINE_ID.sh"
+
+  before_script:
+    - apk add --no-cache openssh-client bash
+    - eval $(ssh-agent -s)
+    - echo "$CINECA_SSH_KEY" | base64 -d | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - ssh-keyscan -H login.g100.cineca.it >> ~/.ssh/known_hosts
+
+  script:
+    - echo "==> Synchronizing configuration files and scripts..."
+
+    # Create necessary remote directories
+    - ssh $CINECA_USER@login.g100.cineca.it "mkdir -p ~/inputs/config ~/inputs/csv_input ~/logs"
+
+    # Copy job.sh and updated input files from the repo
+    - scp job.sh $CINECA_USER@login.g100.cineca.it:~/
+    - scp -r inputs/config/ $CINECA_USER@login.g100.cineca.it:~/inputs/ 2>/dev/null || true
+    - scp -r inputs/csv_input/ $CINECA_USER@login.g100.cineca.it:~/inputs/ 2>/dev/null || true
+
+    # ── KEY POINT ─────────────────────────────────────────────────────────────
+    # Instead of using an SSH heredoc (which often breaks in GitLab runners),
+    # we build the deploy script as a local file and copy it via scp.
+    # This approach is much more robust, readable, and debuggable.
+    # ──────────────────────────────────────────────────────────────────────────
+    - |
+      cat > /tmp/deploy_remote.sh << EOF
+      #!/bin/bash
+      set -e  # Stop immediately if a command fails
+
+      echo "[1/4] Loading singularity module..."
+      module load singularity 2>/dev/null || module load apptainer 2>/dev/null || true
+
+      if command -v apptainer &>/dev/null; then
+        SING_CMD="apptainer"
+      elif command -v singularity &>/dev/null; then
+        SING_CMD="singularity"
+      else
+        echo "ERROR: neither apptainer nor singularity found after module load" >&2
+        exit 1
+      fi
+      echo "   Using: \$SING_CMD"
+
+      echo "[2/4] Login to GHCR and pull image as SIF..."
+      echo "$GHCR_TOKEN" | \$SING_CMD registry login ghcr.io --username "domdegi" --password-stdin
+      \$SING_CMD pull --force "docker://$GHCR_IMAGE" "$SIF_PATH"
+      echo "   Image saved: \$(ls -lh $SIF_PATH | awk '{print \$5, \$9}')"
+
+      echo "[3/4] Setting job.sh permissions and submitting to SLURM..."
+      chmod +x ~/job.sh
+      cd ~
+      JOB_ID=\$(sbatch job.sh | awk '{print \$NF}')
+      echo "   Job submitted with ID: \$JOB_ID"
+      echo "   Monitor with:  squeue -j \$JOB_ID"
+      echo "   Output in:     ~/logs/\${JOB_ID}.log"
+
+      echo "[4/4] Deploy completed successfully."
+      EOF
+
+    # Copy the remote script to the cluster with a unique name per pipeline
+    # (prevents collisions if multiple pipelines run in parallel)
+    - scp /tmp/deploy_remote.sh $CINECA_USER@login.g100.cineca.it:$REMOTE_DEPLOY_SCRIPT
+
+    # Execute the remote script.
+    # -tt forces TTY allocation (needed for some interactive commands like module)
+    # -o BatchMode=yes prevents interactive prompts that would block the runner
+    - ssh -tt -o BatchMode=yes $CINECA_USER@login.g100.cineca.it "bash $REMOTE_DEPLOY_SCRIPT"
+
+  after_script:
+    # Cleanup the temporary script on the cluster (best practice: don't leave
+    # files containing the GHCR_TOKEN lying around on the remote filesystem)
+    - |
+      eval $(ssh-agent -s)
+      echo "$CINECA_SSH_KEY" | base64 -d | tr -d '\r' | ssh-add -
+      mkdir -p ~/.ssh && chmod 700 ~/.ssh
+      ssh-keyscan -H login.g100.cineca.it >> ~/.ssh/known_hosts 2>/dev/null
+      ssh -o BatchMode=yes $CINECA_USER@login.g100.cineca.it \
+        "rm -f $REMOTE_DEPLOY_SCRIPT" 2>/dev/null || true
+
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+# ──────────────────────────────────────────────────────────────────────────────
+# VARIABLES TO SET in GitLab → Settings → CI/CD → Variables
+# (all with the "Masked" flag enabled for security)
+#
+#   CINECA_SSH_KEY       → base64-encoded private SSH key
+#                          generate with: base64 -w 0 ~/.ssh/id_rsa_cineca
+#   CINECA_USER          → your CINECA username (e.g., "ddegiorg")
+#   GHCR_TOKEN           → GitHub Personal Access Token (scope: read:packages)
+#
+# WHY SSH AND NOTHING ELSE:
+#   The Docker runner is an isolated container — it has no access to sbatch, 
+#   singularity, or cluster modules. SSH is the only way to run commands on 
+#   the HPC host. The bug in your original .gitlab-ci.yml was the << 'EOF' 
+#   heredoc inside SSH: GitLab runners often struggle with stdin/heredoc in 
+#   nested SSH sessions. The solution (scp script + ssh bash script) is the 
+#   recommended pattern.
+# ──────────────────────────────────────────────────────────────────────────────
