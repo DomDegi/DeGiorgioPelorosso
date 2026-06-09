@@ -1,16 +1,14 @@
 #!/bin/bash
+# Run this on the login node.
+# It fetches the latest .sif built by your CI/CD pipeline from GitLab.
 
-# 1. This script runs on the Login Node, so it has internet!
-IMAGE_NAME="astralog-hpc.sif"
-IMAGE_URL="docker://ghcr.io/domdegi/astralog-hpc:latest"
+PROJECT_ID="2955" # <-- REPLACE WITH YOUR ACTUAL PROJECT ID
+TOKEN=$(cat ~/.gitlab_token) # Read the token saved in your home directory / Create a file with your token inside login node and set permissions to 600 for security
 
-echo "Checking for container updates..."
+echo "Updating container from GitLab Package Registry..."
+curl --header "PRIVATE-TOKEN: $TOKEN" \
+     "https://gitlab.hpc.cineca.it/api/v4/projects/$PROJECT_ID/packages/generic/astralog-sif/latest/astralog-hpc.sif" \
+     --output ~/astralog-hpc.sif
 
-# Pull the image (the --force flag ensures it overwrites the old one with your latest GitHub push)
-singularity pull --force $IMAGE_NAME $IMAGE_URL
-
-echo "Container updated successfully!"
-
-# 2. Now that the file is safely on the cluster, submit the job to the Compute Node
-echo "Submitting job to Galileo100..."
+echo "Submitting job to SLURM..."
 sbatch job.sh
