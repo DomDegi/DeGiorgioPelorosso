@@ -9,34 +9,21 @@ deploy_to_galileo100:
     - docker
   image: alpine:latest
   
-  before_script:
-    - apk add --no-cache openssh-client bash
-    - eval $(ssh-agent -s)
-    - echo "$CINECA_SSH_KEY" | base64 -d | tr -d '\r' | ssh-add -
-    - mkdir -p ~/.ssh
-    - chmod 700 ~/.ssh
-
   script:
-    - echo "Runner initialized. Connecting to Galileo100 main login node..."
+    - echo "Runner initialized. Executing directly on the Galileo100 CI/CD node..."
     
-    # 1. Reverted to login.g100.cineca.it and added -v for detailed debug logging
-    - scp -v -o StrictHostKeyChecking=no job.sh $CINECA_USER@login.g100.cineca.it:~/DegiorgioPelorosso/
+    # GitLab automatically clones your repo to $CI_PROJECT_DIR
+    - cd $CI_PROJECT_DIR
     
-    # 2. Execute on login node
-    - |
-      ssh -o StrictHostKeyChecking=no $CINECA_USER@login.g100.cineca.it << 'EOF'
-        cd ~/DegiorgioPelorosso
-        
-        echo "Pulling the latest container image from GHCR..."
-        singularity pull --force astralog-hpc.sif docker://ghcr.io/domdegi/astralog-hpc:latest
-        
-        echo "Making job script executable and submitting to Slurm..."
-        chmod +x job.sh
-        sbatch job.sh
-        
-        echo "Deployment successful! Current queue:"
-        squeue -u $USER
-      EOF
+    - echo "Pulling the latest container image from GHCR..."
+    - singularity pull --force astralog-hpc.sif docker://ghcr.io/domdegi/astralog-hpc:latest
+    
+    - echo "Making job script executable and submitting to Slurm..."
+    - chmod +x job.sh
+    - sbatch job.sh
+    
+    - echo "Deployment successful! Current queue:"
+    - squeue -u $CINECA_USER
 
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
