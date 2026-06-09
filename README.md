@@ -61,8 +61,7 @@ Here you can access the official documentation hub and web interface for the **A
 
 ### Language and Libraries
 - **Language:** Python 3.10
-- **Libraries:** 
-  - `polars` (Rust-backed DataFrame library for massive multithreaded rule evaluation and CSV parsing)
+- **Libraries:** - `polars` (Rust-backed DataFrame library for massive multithreaded rule evaluation and CSV parsing)
   - `pyyaml` (for parsing sensor configurations)
   - `argparse` (for dynamic Slurm job parameterization)
   - `pytest` (for unit testing in the CI/CD pipeline)
@@ -83,18 +82,23 @@ This interface-driven design allowed us to cleanly separate the physical data ha
 *(Note: As a group of two students, we utilized the CSV track. However, our pipeline is heavily parallelized for HPC environments).*
 
 To achieve maximum throughput (processing ~850,000 rows/second), we migrated from a single-threaded Pandas approach to a **Polars / Rust multi-threaded architecture**. 
-By chunking the CSV into batches of ~1.6 million rows, we effectively feed the Polars Rayon thread pool with enough data to utilize at full 32-core SLURM compute node, preventing thread starvation while keeping the overall RAM footprint highly constrained. Mathematical operations like `.diff()` and `.cum_sum()` are executed completely in C/Rust, avoiding the Python Global Interpreter Lock (GIL).
+By chunking the CSV into batches, we effectively feed the Polars Rayon thread pool with enough data to utilize a full 32-core SLURM compute node, preventing thread starvation while keeping the overall RAM footprint highly constrained. Mathematical operations like `.diff()` and `.cum_sum()` are executed completely in C/Rust, avoiding the Python Global Interpreter Lock (GIL).
+
+**Scalability and Optimal Batch Sizes:**
+Extensive scalability testing was conducted to determine the optimal batch sizes for different hardware environments, yielding **near-linear scalability** across available cores:
+- **Local Environment (DeGiorgio CPU):** The optimal throughput was achieved with a batch size of **750,000 rows**, balancing local RAM constraints with CPU thread saturation.
+- **HPC Environment (Galileo100):** Due to the massive 32-core architecture and high-speed memory layout, the optimal batch size shifted to **200,000 rows**. This tighter batching prevents L3-cache misses and ensures continuous, high-speed thread feeding on the compute nodes.
 
 ### Usage of AI 
 AI assistants (Gemini) were used primarily as a technical consultant to:
-- General deubg.
+- General debug.
 - Understand and debug containerization concepts (Docker to Singularity conversion).
-- Transport our original Pandas implementetion to Polars.
-- Formulate the CI/CD pipeline syntax for GitHub Actions.
+- Transport our original Pandas implementation to Polars.
+- Formulate the CI/CD pipeline syntax for GitHub Actions and GitLab CI.
 - Profile C-level execution times to identify and eliminate $O(N^2)$ memory-copying bottlenecks during the Pandas-to-Polars migration.
 - Configure SLURM scripts to avoid NFS login-node throttling by mapping container I/O directly to high-speed NVMe cluster scratch space (`$WORK`).
-- Generated pdocs comments for all the src code and after reviewing and making the needed adjustments added them to the code.
-- Added the autonomous generation and deployment of the pdocs to our github actions thanks to the help of gemini and of github copilot.
+- Generate pdocs comments for all the src code and, after reviewing and making the needed adjustments, add them to the code.
+- Implement the autonomous generation and deployment of the pdocs to our GitHub pages.
 
 ---
 
@@ -115,58 +119,50 @@ python3 -m pytest tests/
 
 ## Pipeline & DevOps Workflow
 
-Our project utilizes a modern, zero-touch CI/CD pipeline built on **GitHub Actions**.
+Our project utilizes a modern, zero-touch CI/CD pipeline spanning across GitHub and CINECA's internal GitLab.
 
-1. **Continuous Integration (CI):** Upon every push to the `main` branch, the pipeline spins up a virtual environment, installs dependencies, and runs the `pytest` suite (23 tests).
-2. **Continuous Deployment (CD):** If the tests pass, the pipeline automatically builds a production Docker image using `Dockerfile.prod` and pushes it to the GitHub Container Registry (GHCR).
-3. **HPC Execution:** On the CINECA Galileo100 supercomputer, our `job.sh` SLURM script utilizes **Singularity (Apptainer)** to execute the container. 
-Extra. **Python document generation and deployment:** Every new commit or pull request on main tries to regenerate the pdoc and deploy it as an html static website through github pages.
-### Cluster Operating Procedure (CINECA G100)
+1. **Continuous Integration (CI):** Upon every push to the `main` branch, a GitHub Action spins up a virtual environment, installs dependencies, and runs the `pytest` suite.
+2. **Continuous Deployment (CD) - Docker:** If the tests pass, the pipeline automatically builds a production Docker image using `Dockerfile.prod` and pushes it to the GitHub Container Registry (GHCR).
+3. **Repository Mirroring & HPC Containerization:** A GitHub Actions workflow automatically mirrors the repository to CINECA's internal GitLab. From there, a **GitLab CI/CD runner** automatically pulls the Docker image from GHCR, converts it into a native Singularity `.sif` image, and securely publishes it to the GitLab Package Registry. This ensures the cluster environment is perfectly synced with the code without requiring manual or root-level builds.
+4. **Python Document Generation:** Every new commit on `main` triggers the regeneration of the `pdoc` documentation and deploys it as a static website through GitHub Pages.
+
+---
+
+## Cluster Operating Procedure (CINECA G100)
+
+To ensure compliance with CINECA's security policies (which restrict automated CI/CD SSH job submission), job orchestration is performed manually via the SLURM scheduler, utilizing the artifacts automatically built by our pipeline.
 
 To achieve maximum I/O throughput, our `job.sh` script automatically creates an isolated, job-specific scratch directory on the cluster's high-speed `$WORK` filesystem, moving data off the slow network-mounted `$HOME` directory before executing the container.
 
-**1. Upload Inputs:**
-Run these commands from your local terminal to push files to CINECA:
+**1. Setup (One-time only):**
+Generate a Personal Access Token on the CINECA GitLab instance (Scope: `read_api`) and store it securely on your Galileo100 login node:
 ```bash
-ssh username@login.g100.cineca.it "mkdir -p ~/inputs ~/results"
-scp config/Current_sensors_sat_alpha.yaml username@login.g100.cineca.it:~/inputs/
-scp config/Current_rules_sat_alpha.json username@login.g100.cineca.it:~/inputs/
-scp csv_input/export_100X.csv username@login.g100.cineca.it:~/inputs/
-scp job.sh submit.sh username@login.g100.cineca.it:~/
+echo "YOUR_GITLAB_TOKEN" > ~/.gitlab_token
+chmod 600 ~/.gitlab_token
 ```
 
-**2. Prepare the Container Image:**
-Compute nodes lack internet access, so the image must be downloaded on the login node first to generate the `.sif` file. You can do this in two ways:
-
-*Option A: Automated Submit Script*
-Make the uploaded `submit.sh` script executable and run it. It will automatically download the image from GHCR and submit the Slurm job for you:
+**2. Sync & Submit from Local Machine:**
+Whenever you want to run a new batch, use the provided `sync_and_submit.sh` script from your local terminal. This script syncs your configuration files and immediately triggers the submission process on the cluster:
 ```bash
-ssh username@login.g100.cineca.it
-chmod +x submit.sh
-./submit.sh
+./sync_and_submit.sh <your_cineca_username>
 ```
+*(Alternatively, you can manually `scp` the `inputs/`, `job.sh`, and `submit.sh` files to your cluster home directory, log in, and run `./submit.sh`).*
 
-*Option B: Manual Pull*
-If you prefer to submit the job manually, run the singularity pull command on the login node first:
-```bash
-ssh username@login.g100.cineca.it
-singularity pull astralog-hpc.sif docker://ghcr.io/domdegi/astralog-hpc:latest
-```
-
-**3. Execute the Job (If using Option B):**
-On the cluster, submit the job to the dedicated `usr_prod` compute partition (32 Cores, 64GB RAM):
-```bash
-sbatch job.sh
-```
+**3. Automated HPC Orchestration (`submit.sh` & `job.sh`):**
+The `submit.sh` script acts as an orchestrator on the login node. Using your stored token, it automatically downloads the latest `.sif` container from your GitLab Package Registry, and then submits the `job.sh` to the dedicated `g100_usr_prod` compute partition (32 Cores, 64GB RAM).
 
 **4. Monitor and Download Results:**
+Monitor your job status in the queue:
+```bash
+squeue -u <your_username>
+```
 Check the live terminal output via the generated log:
 ```bash
 cat astralog_run_<JOB_ID>.log
 ```
-Once the job finishes, pull the generated data back to your local machine:
+Once the job finishes, the results are saved to `~/astralog_results_<JOB_ID>`. Pull the generated data back to your local machine:
 ```bash
-scp -o StrictHostKeyChecking=no -r username@login.g100.cineca.it:~/astralog_results_<JOB_ID> ./
+scp -o StrictHostKeyChecking=no -r <your_username>@login.g100.cineca.it:~/astralog_results_<JOB_ID> ./
 ```
 
 ---
