@@ -121,7 +121,7 @@ python3 -m pytest tests/
 
 Our project utilizes a modern, zero-touch CI/CD pipeline spanning across GitHub and CINECA's internal GitLab.
 
-1. **Continuous Integration (CI):** Upon every push to the `main` branch, a GitHub Action spins up a virtual environment, installs dependencies, and runs the `pytest` suite.
+1. **Continuous Integration (CI):** Upon every push to the `main` branch, a GitHub Action spins up a virtual environment, installs dependencies, and runs the `pytest` suite. It also includes deep **CodeQL Semantic Analysis** for security/vulnerability scanning. If any tests fail, the pipeline automatically uploads the failure logs as GitHub Artifacts to streamline debugging.
 2. **Continuous Deployment (CD) - Docker:** If the tests pass, the pipeline automatically builds a production Docker image using `Dockerfile.prod` and pushes it to the GitHub Container Registry (GHCR).
 3. **Repository Mirroring & HPC Containerization:** A GitHub Actions workflow automatically mirrors the repository to CINECA's internal GitLab. From there, a **GitLab CI/CD runner** automatically pulls the Docker image from GHCR, converts it into a native Singularity `.sif` image, and securely publishes it to the GitLab Package Registry. This ensures the cluster environment is perfectly synced with the code without requiring manual or root-level builds.
 4. **Python Document Generation:** Every new commit on `main` triggers the regeneration of the `pdoc` documentation and deploys it as a static website through GitHub Pages.

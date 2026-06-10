@@ -9,7 +9,33 @@ on:
 
 # 2. JOBS
 jobs:
+  # ==========================================
+  # GATE 1: DEEP CODEQL SEMANTIC ANALYSIS
+  # ==========================================
+  codeql-analysis:
+    name: CodeQL Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+
+  # ==========================================
+  # GATE 2: UNIT TESTING & DOC GENERATION
+  # ==========================================
   test:
+    needs: codeql-analysis # Waits for security scan to pass before running
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
@@ -25,15 +51,24 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements_dev.txt
 
-    - name: Execute pytest
+    - name: Execute pytest (with JUnit XML output)
       run: |
-        python -m pytest
+        python -m pytest --junitxml=pytest-report.xml
         
+    - name: Upload Pytest Report on Failure
+      if: failure() # Only triggers if the pytest step fails!
+      uses: actions/upload-artifact@v4
+      with:
+        name: pytest-failure-report
+        path: pytest-report.xml
+
     - name: Build HTML Documentation
       run: |
         pdoc ./src -o ./docs/pdocs
   
-  # CD JOB: Build and push the Docker image
+  # ==========================================
+  # CD JOB: BUILD & PUSH DOCKER CONTAINER
+  # ==========================================
   build-and-push-container:
     needs: test # the image only builds if tests pass
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -60,14 +95,14 @@ jobs:
     - name: Build and push Docker image
       uses: docker/build-push-action@v6 
       with:
-        # The context is the repository's root
         context: .
         file: docker/Dockerfile.prod
         push: true
-        # env.OWNER_LC instead of github.repository_owner, the second could use uppercases causing error
         tags: ghcr.io/${{ env.OWNER_LC }}/astralog-hpc:latest
   
+  # ==========================================
   # AUTONOMOUS DOCUMENTATION DEPLOYMENT
+  # ==========================================
   deploy-docs:
     needs: test # Only deploy docs if the code passes its tests
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -95,9 +130,7 @@ jobs:
     - name: Generate HTML Documentation
       run: |
         pdoc ./src ./tests -o ./_site --logo-link https://domdegi.github.io/DeGiorgioPelorosso/index.html --logo "" 
-
         cp ./_site/src.html ./_site/index.html      # Adds a homepage to the generated docs
-        
         cp -r uml _site/uml                         # Copy the UML folder into the generated site so images work
 
     - name: Upload Pages artifact
@@ -108,6 +141,9 @@ jobs:
     - name: Deploy to GitHub Pages
       uses: actions/deploy-pages@v4
 
+  # ==========================================
+  # MIRROR TO CINECA GITLAB
+  # ==========================================
   mirror-to-gitlab:
     needs: test # Wait for tests to pass before deploying
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -120,13 +156,9 @@ jobs:
 
       - name: Push to CINECA GitLab
         env:
-          # CINECA USERNAME
           GITLAB_USERNAME: "ddegiorg" 
           GITLAB_TOKEN: ${{ secrets.CINECA_GITLAB_TOKEN }}
         run: |
-          # Make sure the URL ends with your actual repo name: DeGiorgioPelorosso-deploy.git
           git remote add gitlab https://oauth2:$GITLAB_TOKEN@gitlab.hpc.cineca.it/$GITLAB_USERNAME/DeGiorgioPelorosso-deploy.git
-          
-          # Force push all branches and tags to GitLab
           git push gitlab --all --force
           git push gitlab --tags --force
