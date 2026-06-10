@@ -167,18 +167,30 @@ jobs:
       - name: Await GitLab Container Build (Apptainer)
         env:
           GITLAB_TOKEN: ${{ secrets.CINECA_GITLAB_TOKEN }}
-          PROJECT_ID: "2955" # Gitlab project id for the mirrored repository (you can find it in the GitLab project URL or settings)
+          PROJECT_ID: "2955" 
           COMMIT_SHA: ${{ github.sha }}
         run: |
           echo "Waiting for GitLab to register the pipeline for commit $COMMIT_SHA..."
           
-          # Retry loop to find the Pipeline ID (GitLab takes a few seconds to create it after push)
           for i in {1..12}; do
-            PIPELINE_ID=$(curl -s --header "PRIVATE-TOKEN: $GITLAB_TOKEN" "https://gitlab.hpc.cineca.it/api/v4/projects/$PROJECT_ID/pipelines?sha=$COMMIT_SHA" | jq -r '.[0].id')
+            # 1. Fetch the raw response first
+            RESPONSE=$(curl -s --header "PRIVATE-TOKEN: $GITLAB_TOKEN" "https://gitlab.hpc.cineca.it/api/v4/projects/$PROJECT_ID/pipelines?sha=$COMMIT_SHA")
+            
+            # 2. Check if the response contains an API error message
+            if echo "$RESPONSE" | grep -q '"message"'; then
+              echo "GitLab API Error: $RESPONSE"
+              echo "Hint: Check your PROJECT_ID and ensure your CINECA_GITLAB_TOKEN has 'read_api' scope."
+              exit 1
+            fi
+            
+            # 3. If it's not an error, safely parse the ID
+            PIPELINE_ID=$(echo "$RESPONSE" | jq -r '.[0].id // empty')
+            
             if [ "$PIPELINE_ID" != "null" ] && [ -n "$PIPELINE_ID" ]; then
               echo "Found GitLab Pipeline ID: $PIPELINE_ID"
               break
             fi
+            
             echo "Pipeline not found yet, retrying in 10 seconds..."
             sleep 10
           done
