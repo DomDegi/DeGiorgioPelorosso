@@ -142,12 +142,13 @@ jobs:
       uses: actions/deploy-pages@v4
 
   # ==========================================
-  # MIRROR TO CINECA GITLAB
+  # MIRROR TO CINECA GITLAB & AWAIT SIF BUILD
   # ==========================================
   mirror-to-gitlab:
     needs: test # Wait for tests to pass before deploying
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 30 # Prevents GitHub from hanging forever if CINECA is down
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -162,3 +163,43 @@ jobs:
           git remote add gitlab https://oauth2:$GITLAB_TOKEN@gitlab.hpc.cineca.it/$GITLAB_USERNAME/DeGiorgioPelorosso-deploy.git
           git push gitlab --all --force
           git push gitlab --tags --force
+
+      - name: Await GitLab Container Build (Apptainer)
+        env:
+          GITLAB_TOKEN: ${{ secrets.CINECA_GITLAB_TOKEN }}
+          PROJECT_ID: "2955" # Gitlab project id for the mirrored repository (you can find it in the GitLab project URL or settings)
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          echo "Waiting for GitLab to register the pipeline for commit $COMMIT_SHA..."
+          
+          # Retry loop to find the Pipeline ID (GitLab takes a few seconds to create it after push)
+          for i in {1..12}; do
+            PIPELINE_ID=$(curl -s --header "PRIVATE-TOKEN: $GITLAB_TOKEN" "https://gitlab.hpc.cineca.it/api/v4/projects/$PROJECT_ID/pipelines?sha=$COMMIT_SHA" | jq -r '.[0].id')
+            if [ "$PIPELINE_ID" != "null" ] && [ -n "$PIPELINE_ID" ]; then
+              echo "Found GitLab Pipeline ID: $PIPELINE_ID"
+              break
+            fi
+            echo "Pipeline not found yet, retrying in 10 seconds..."
+            sleep 10
+          done
+
+          if [ "$PIPELINE_ID" == "null" ] || [ -z "$PIPELINE_ID" ]; then
+            echo "Error: Could not find GitLab pipeline for this commit. The mirror might have failed."
+            exit 1
+          fi
+          
+          echo "Polling GitLab Pipeline Status..."
+          while true; do
+            STATUS=$(curl -s --header "PRIVATE-TOKEN: $GITLAB_TOKEN" "https://gitlab.hpc.cineca.it/api/v4/projects/$PROJECT_ID/pipelines/$PIPELINE_ID" | jq -r '.status')
+            
+            if [ "$STATUS" == "success" ]; then
+              echo "SUCCESS: GitLab successfully built and published the .sif container!"
+              exit 0
+            elif [ "$STATUS" == "failed" ] || [ "$STATUS" == "canceled" ]; then
+              echo "ERROR: GitLab pipeline failed to build the container! Check CINECA GitLab logs."
+              exit 1
+            fi
+            
+            echo "Current status: $STATUS... waiting 15 seconds."
+            sleep 15
+          done
