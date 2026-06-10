@@ -199,3 +199,16 @@ def test_priority_sorting(engine):
     assert alarm_df['priority'][0] == 'HIGH'
     assert alarm_df['priority'][1] == 'MEDIUM'
     assert alarm_df['priority'][2] == 'LOW'
+
+
+def test_invalid_operator_guard(engine):
+    """EDGE CASE: An invalid operator in rules.json should not crash the engine."""
+    engine.rules = [{
+        "rule_id": "R_BAD", "type": "simple", "sensor_id": "TEMP-01", 
+        "operator": "MAGIC_OPERATOR", "value": 50.0, "priority": "HIGH"
+    }]
+    batch = pl.DataFrame({'timestamp': ['T1'], 'sensor_id': ['TEMP-01'], 'value': [40.0]})
+    
+    # It should either return 0 alarms safely or raise a specific known Exception
+    valid, alarms = engine.evaluate_rules(batch)
+    assert alarms.height == 0

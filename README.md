@@ -167,6 +167,18 @@ scp -o StrictHostKeyChecking=no -r <your_username>@login.g100.cineca.it:~/astral
 
 ---
 
+## Technical Challenges & Architectural Compromises
+
+The original project guidelines requested a fully autonomous CI/CD pipeline capable of testing, containerizing, and automatically submitting the SLURM job to the Galileo100 cluster. However, strict CINECA security policies required us to adopt a "hybrid" deployment strategy.
+
+During development, we encountered and documented the following limitations:
+1. **2FA & SSH Expiry:** Automated GitHub Actions cannot directly SSH into the cluster because CINECA enforces Two-Factor Authentication (2FA) via `smallstep`. The generated SSH certificates expire after 12 hours and require human interaction to renew, making permanent unattended CI/CD access impossible.
+2. **Unprivileged CI Runners:** We attempted to bypass the external SSH firewall by using CINECA's internal GitLab runners. However, these runners operate inside unprivileged Alpine Linux containers. They lack `root` and `fakeroot` permissions, making it impossible to use `apptainer build` from a definition (`.def`) file. Furthermore, the runners do not have access to the host's `sbatch` command or `slurmrestd`.
+
+**The Solution:** We designed a robust compromise. We shifted the heavy lifting (testing and container building) to GitHub Actions and GHCR. We use the internal GitLab runner merely to securely pull and convert the image into a `.sif` file stored in the local registry. This allows the user to trigger the final deployment manually with a single script (`sync_and_submit.sh`), fully respecting cluster security rules while maintaining 90% automation.
+
+---
+
 ## License
 
 This project is licensed under the **MIT License**. See the `LICENSE` file for more details.
