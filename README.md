@@ -129,6 +129,15 @@ Our project utilizes a modern, zero-touch CI/CD pipeline spanning across GitHub 
 
 ---
 
+### CI/CD Environment Configuration
+To enable the automated cross-platform deployment, the following Repository Secrets must be configured in GitHub (`Settings > Secrets and variables > Actions`):
+
+* `GITLAB_USERNAME`: Your CINECA institutional username.
+* `CINECA_GITLAB_TOKEN`: A Personal Access Token generated on CINECA's GitLab instance. **Required Scopes:** `read_api`, `read_repository`, and `write_repository`.
+* *Note:* GitHub automatically injects the standard `GITHUB_TOKEN` required to build and push to the GitHub Container Registry (GHCR), so no manual configuration is needed for the Docker build phase.
+
+---
+
 ## Cluster Operating Procedure (CINECA G100)
 
 To ensure compliance with CINECA's security policies (which restrict automated CI/CD SSH job submission), job orchestration is performed manually via the SLURM scheduler, utilizing the artifacts automatically built by our pipeline.

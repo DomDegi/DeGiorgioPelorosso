@@ -145,7 +145,7 @@ jobs:
   # MIRROR TO CINECA GITLAB & AWAIT SIF BUILD
   # ==========================================
   mirror-to-gitlab:
-    needs: test # Wait for tests to pass before deploying
+    needs: test 
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30 # Prevents GitHub from hanging forever if CINECA is down
@@ -153,11 +153,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
-          fetch-depth: 0 # Required to mirror all history
+          fetch-depth: 0 
 
       - name: Push to CINECA GitLab
         env:
-          GITLAB_USERNAME: "ddegiorg" 
+          # Pulls both username and token securely from GitHub Secrets
+          GITLAB_USERNAME: ${{ secrets.GITLAB_USERNAME }} 
           GITLAB_TOKEN: ${{ secrets.CINECA_GITLAB_TOKEN }}
         run: |
           git remote add gitlab https://oauth2:$GITLAB_TOKEN@gitlab.hpc.cineca.it/$GITLAB_USERNAME/DeGiorgioPelorosso-deploy.git
@@ -173,23 +174,15 @@ jobs:
           echo "Waiting for GitLab to register the pipeline for commit $COMMIT_SHA..."
           
           for i in {1..12}; do
-            # 1. Fetch the raw response first
             RESPONSE=$(curl -s --header "PRIVATE-TOKEN: $GITLAB_TOKEN" "https://gitlab.hpc.cineca.it/api/v4/projects/$PROJECT_ID/pipelines?sha=$COMMIT_SHA")
             
-            # Print the raw response to the logs so we can see the exact error
-            echo "RAW API RESPONSE: $RESPONSE"
-            
-            # 2. Check if the response is an array (valid) or an object (error)
-            # jq type == "array" ensures we only try to index it if it's a list
             IS_ARRAY=$(echo "$RESPONSE" | jq 'type == "array"')
             
             if [ "$IS_ARRAY" != "true" ]; then
-              echo "CINECA GitLab returned an error instead of a pipeline list."
-              echo "Hint: Look at the RAW API RESPONSE above. Is the token expired? Is 2955 the wrong Project ID?"
+              echo "CINECA GitLab returned an error."
               exit 1
             fi
             
-            # 3. Safely parse the ID since we know it's an array now
             PIPELINE_ID=$(echo "$RESPONSE" | jq -r '.[0].id // empty')
             
             if [ "$PIPELINE_ID" != "null" ] && [ -n "$PIPELINE_ID" ]; then
@@ -202,7 +195,7 @@ jobs:
           done
 
           if [ "$PIPELINE_ID" == "null" ] || [ -z "$PIPELINE_ID" ]; then
-            echo "Error: Could not find GitLab pipeline for this commit. The mirror might have failed."
+            echo "Error: Could not find GitLab pipeline for this commit."
             exit 1
           fi
           
