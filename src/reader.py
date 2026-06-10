@@ -13,12 +13,13 @@ from src.interfaces import ITelemetryReader
 
 logger = logging.getLogger(__name__)
 
+
 class CSVTelemetryReader(ITelemetryReader):
     """
     Concrete implementation of the ITelemetryReader for CSV files.
-    
-    Maintains an internal DataFrame buffer to reconcile the difference between 
-    Polars' native physical chunking and the exact logical batch sizes requested 
+
+    Maintains an internal DataFrame buffer to reconcile the difference between
+    Polars' native physical chunking and the exact logical batch sizes requested
     by the Orchestrator.
     """
 
@@ -33,22 +34,22 @@ class CSVTelemetryReader(ITelemetryReader):
 
         self.sensors_config = self._load_yaml(sensors_yaml_path)
         self.csv_path = csv_path or "data/telemetry_stream.csv"
-        
+
         # Buffer to solve the Polars "50k chunk" vs Pandas "exact row count" mismatch
         self._buffer = pl.DataFrame()
-        
+
         self.schema = {
             "timestamp": pl.Utf8,
             "sensor_id": pl.Utf8,
             "value": pl.Utf8,  # Read as string first for strict NA/type handling like Pandas
-            "priority": pl.Utf8
+            "priority": pl.Utf8,
         }
-        
+
         self._batched_reader = pl.read_csv_batched(
             self.csv_path,
             dtypes=self.schema,
             ignore_errors=True,
-            null_values=["", "NA", "NaN", "null"]
+            null_values=["", "NA", "NaN", "null"],
         )
         logger.info(f"CSVTelemetryReader initialized. Target: {self.csv_path}")
 
@@ -64,14 +65,14 @@ class CSVTelemetryReader(ITelemetryReader):
         """
 
         path = path or "config/sensors.yaml"
-        with open(path, 'r') as file:
+        with open(path, "r") as file:
             return yaml.safe_load(file)
 
     def _sanitize_batch(self, batch: pl.DataFrame) -> pl.DataFrame:
         """
         Cleans the raw physical chunk to ensure strict schema compliance.
 
-        Validates mandatory columns, normalizes priorities, enforces strict Float64 
+        Validates mandatory columns, normalizes priorities, enforces strict Float64
         types for values, and drops structurally corrupted rows safely.
 
         Args:
@@ -82,36 +83,43 @@ class CSVTelemetryReader(ITelemetryReader):
         """
 
         initial_len = batch.height
-        
+
         # 1. Mandatory columns check
-        req_cols = ['timestamp', 'sensor_id', 'value']
+        req_cols = ["timestamp", "sensor_id", "value"]
         missing_cols = [c for c in req_cols if c not in batch.columns]
         if missing_cols:
-            return pl.DataFrame(schema={"timestamp": pl.Utf8, "sensor_id": pl.Utf8, "value": pl.Float64, "priority": pl.Utf8})
+            return pl.DataFrame(
+                schema={
+                    "timestamp": pl.Utf8,
+                    "sensor_id": pl.Utf8,
+                    "value": pl.Float64,
+                    "priority": pl.Utf8,
+                }
+            )
 
         clean_batch = batch.drop_nulls(subset=req_cols)
 
         # 2. Priority Handling (Default to LOW, uppercase, strict valid list)
-        if 'priority' not in clean_batch.columns:
-            clean_batch = clean_batch.with_columns(pl.lit('LOW').alias('priority'))
+        if "priority" not in clean_batch.columns:
+            clean_batch = clean_batch.with_columns(pl.lit("LOW").alias("priority"))
         else:
             clean_batch = clean_batch.with_columns(
-                pl.col('priority').fill_null('LOW').str.to_uppercase()
-            ).filter(
-                pl.col('priority').is_in(['LOW', 'MEDIUM', 'HIGH'])
-            )
+                pl.col("priority").fill_null("LOW").str.to_uppercase()
+            ).filter(pl.col("priority").is_in(["LOW", "MEDIUM", "HIGH"]))
 
         # 3. Strict Type Checking (Values to Float, drop failures)
         clean_batch = clean_batch.with_columns(
-            pl.col('value').cast(pl.Float64, strict=False)
-        ).drop_nulls(subset=['value'])
+            pl.col("value").cast(pl.Float64, strict=False)
+        ).drop_nulls(subset=["value"])
 
         # Drop invalid datetimes but keep column as string (matching Pandas implementation)
-        clean_batch = clean_batch.with_columns(
-            pl.col("timestamp").str.to_datetime(strict=False).alias("parsed_time")
-        ).filter(
-            pl.col("parsed_time").is_not_null()
-        ).drop("parsed_time")
+        clean_batch = (
+            clean_batch.with_columns(
+                pl.col("timestamp").str.to_datetime(strict=False).alias("parsed_time")
+            )
+            .filter(pl.col("parsed_time").is_not_null())
+            .drop("parsed_time")
+        )
 
         dropped = initial_len - clean_batch.height
         if dropped > 0:
@@ -123,8 +131,8 @@ class CSVTelemetryReader(ITelemetryReader):
         """
         Extracts exactly 'batch_size' rows using an optimized internal list buffer.
 
-        Reads from the underlying Polars batched reader until enough rows are collected, 
-        slices the exact requested amount, and leaves the remainder in memory for the 
+        Reads from the underlying Polars batched reader until enough rows are collected,
+        slices the exact requested amount, and leaves the remainder in memory for the
         next loop iteration.
 
         Args:
@@ -133,19 +141,19 @@ class CSVTelemetryReader(ITelemetryReader):
         Returns:
             pl.DataFrame: A sanitized batch of telemetry data.
         """
-                
+
         # 1. Put the leftover buffer into a list
         batches_to_concat = [self._buffer] if self._buffer.height > 0 else []
         current_height = self._buffer.height
-        
-        # 2. Append new batches to the list 
+
+        # 2. Append new batches to the list
         while current_height < batch_size:
             batches = self._batched_reader.next_batches(1)
             if not batches:
                 break
             batches_to_concat.append(batches[0])
             current_height += batches[0].height
-            
+
         if current_height == 0:
             logger.info("End of CSV telemetry stream reached.")
             return pl.DataFrame(schema=self.schema)

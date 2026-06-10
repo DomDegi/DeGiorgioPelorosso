@@ -19,21 +19,21 @@ import polars as pl
 class ITelemetryReader(ABC):
     """
     Interface for the data ingestion component.
-    
-    Obscures the inner workings of how data is read from disk. By depending on this 
+
+    Obscures the inner workings of how data is read from disk. By depending on this
     interface, the system can seamlessly switch between CSV, JSON, or SQL databases.
     """
-    
+
     @abstractmethod
     def extract_batch(self, batch_size: int) -> pl.DataFrame:
         """
         Extracts the next physical chunk of data, sanitizes it, and returns a logical batch.
-        
+
         Args:
             batch_size (int): The maximum number of rows to read, preventing HPC memory overflow.
-            
+
         Returns:
-            pl.DataFrame: A batch of clean, validated telemetry ready for rule evaluation. 
+            pl.DataFrame: A batch of clean, validated telemetry ready for rule evaluation.
                 Returns an empty DataFrame when the end of the file/stream is reached.
         """
         pass
@@ -42,19 +42,21 @@ class ITelemetryReader(ABC):
 class IRulesEngine(ABC):
     """
     Interface for the core business logic component.
-    
-    Decouples the Orchestrator from the mathematical and stateful logic required 
+
+    Decouples the Orchestrator from the mathematical and stateful logic required
     to evaluate satellite monitoring rules.
     """
-    
+
     @abstractmethod
-    def evaluate_rules(self, telemetry_batch: pl.DataFrame) -> Tuple[pl.DataFrame, pl.DataFrame]:
+    def evaluate_rules(
+        self, telemetry_batch: pl.DataFrame
+    ) -> Tuple[pl.DataFrame, pl.DataFrame]:
         """
         Evaluates a batch of raw telemetry against the project rules (Simple, Stateful, etc.).
-        
+
         Args:
             telemetry_batch (pl.DataFrame): The raw batch extracted by the Reader.
-            
+
         Returns:
             Tuple[pl.DataFrame, pl.DataFrame]: A tuple containing two DataFrames:
                 - `valid_telemetry`: Rows that triggered no alarms (Nominal).
@@ -66,11 +68,11 @@ class IRulesEngine(ABC):
 class IStateMemory(ABC):
     """
     Interface for the memory tracking component.
-    
-    Stateful rules (e.g., "5 consecutive errors") and Step rules require tracking 
+
+    Stateful rules (e.g., "5 consecutive errors") and Step rules require tracking
     data across multiple batches. This interface hides how the state is physically stored.
     """
-    
+
     @abstractmethod
     def get_current_count(self, rule_id: str, sensor_id: str) -> int:
         """
@@ -125,11 +127,11 @@ class IStateMemory(ABC):
 class IOutputWriter(ABC):
     """
     Interface for the data exportation component.
-    
-    Obscures how and where the final results are saved, preventing the Orchestrator 
+
+    Obscures how and where the final results are saved, preventing the Orchestrator
     from being tied to specific file paths or formats.
     """
-    
+
     @abstractmethod
     def write_valid_batch(self, valid_telemetry: pl.DataFrame) -> None:
         """
