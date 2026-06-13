@@ -17,14 +17,14 @@ activate Orchestrator
 loop Until end of telemetry_stream.csv (Chunking)
     Orchestrator -> Reader: extract_batch(batch_size)
     activate Reader
-    Reader --> Orchestrator: List[Valid_Telemetry_Packets]
+    Reader --> Orchestrator: List[Valid_Telemetry_Records]
     deactivate Reader
 
-    loop For each packet in the chunk
-        Orchestrator -> Engine: evaluate_rules(packet)
+    loop For each packet in the chunk of records
+        Orchestrator -> Engine: evaluate_rules(batch)
         activate Engine
 
-        Engine -> Engine: evaluate_condition(packet)
+        Engine -> Engine: evaluate_condition(batch)
         note right: Check e.g., VOLT-MAIN < 20.0
 
         alt Condition True (Anomaly detected)

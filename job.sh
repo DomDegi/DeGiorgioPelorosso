@@ -27,11 +27,13 @@ cp $HOME/astralog-hpc.sif $SCRATCH_DIR/
 export POLARS_MAX_THREADS=$SLURM_CPUS_PER_TASK
 
 echo "Executing pipeline..."
+cd $SCRATCH_DIR
+
 singularity exec \
     --pwd /workspace \
     --bind $SCRATCH_DIR/inputs:/workspace/inputs \
     --bind $SCRATCH_DIR/output:/workspace/output \
-    $SCRATCH_DIR/astralog-hpc.sif \
+    astralog-hpc.sif \
     python3 -m src.main \
     --batch_size 200000 \
     --input_path inputs/csv_input/$CSV_FILENAME \
@@ -40,6 +42,8 @@ singularity exec \
     --sensors_path inputs/config/Current_sensors_sat_alpha.yaml
 
 echo "Moving results back to home directory..."
+cd $HOME
+
 mkdir -p $HOME/astralog_results_$SLURM_JOB_ID
 cp -r $SCRATCH_DIR/output/* $HOME/astralog_results_$SLURM_JOB_ID/
 

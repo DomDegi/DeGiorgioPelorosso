@@ -24,18 +24,23 @@ DATASETS=(
 SCRATCH_DIR="$WORK/astralog_scale_$SLURM_JOB_ID"
 RESULTS_FILE="$HOME/scalability_results.csv"
 
-mkdir -p $SCRATCH_DIR/inputs
+# create all required subdirectories
+mkdir -p $SCRATCH_DIR/inputs/config
+mkdir -p $SCRATCH_DIR/inputs/csv_input
 mkdir -p $SCRATCH_DIR/output
 
 # Initialize the results CSV with headers
 echo "Rows,Time_Seconds" > $RESULTS_FILE
 
 echo "Copying config files and Singularity container..."
-cp $HOME/inputs/*.json $SCRATCH_DIR/inputs/
-cp $HOME/inputs/*.yaml $SCRATCH_DIR/inputs/
+cp $HOME/inputs/config/*.json $SCRATCH_DIR/inputs/config/
+cp $HOME/inputs/config/*.yaml $SCRATCH_DIR/inputs/config/
 cp $HOME/astralog-hpc.sif $SCRATCH_DIR/
 
 export POLARS_MAX_THREADS=$SLURM_CPUS_PER_TASK
+
+# Move into the scratch directory for safe execution
+cd $SCRATCH_DIR
 
 # 2. Loop through each dataset
 for DATASET in "${DATASETS[@]}"; do
@@ -47,23 +52,23 @@ for DATASET in "${DATASETS[@]}"; do
     echo "Testing dataset: $FILE ($ROWS rows)"
     
     # Copy the specific CSV to scratch
-    cp $HOME/inputs/$FILE $SCRATCH_DIR/inputs/
+    cp $HOME/inputs/csv_input/$FILE $SCRATCH_DIR/inputs/csv_input/
     
     # Start timer
     START_TIME=$(date +%s)
     
-    # Run the pipeline (using your optimal batch size of ~1.5M)
+    # Run the pipeline (using your optimal batch size of 200,000)
     singularity exec \
         --pwd /workspace \
         --bind $SCRATCH_DIR/inputs:/workspace/inputs \
         --bind $SCRATCH_DIR/output:/workspace/output \
-        $SCRATCH_DIR/astralog-hpc.sif \
+        astralog-hpc.sif \
         python3 -m src.main \
         --batch_size 200000 \
-        --input_path inputs/$FILE \
+        --input_path inputs/csv_input/$FILE \
         --output_path output \
-        --rules_path inputs/Current_rules_sat_alpha.json \
-        --sensors_path inputs/Current_sensors_sat_alpha.yaml
+        --rules_path inputs/config/Current_rules_sat_alpha.json \
+        --sensors_path inputs/config/Current_sensors_sat_alpha.yaml
 
     # Stop timer
     END_TIME=$(date +%s)
@@ -76,9 +81,14 @@ for DATASET in "${DATASETS[@]}"; do
     
     # Clean up the output folder so the next run starts fresh
     rm -rf $SCRATCH_DIR/output/*
-    rm $SCRATCH_DIR/inputs/$FILE
+    
+    # Remove the specific CSV to free up space for the next loop
+    rm $SCRATCH_DIR/inputs/csv_input/$FILE
 done
 
 echo "================================================="
 echo "Scalability test complete! Results saved to ~/scalability_results.csv"
+
+# Go back to HOME before deleting the scratch directory
+cd $HOME
 rm -rf $SCRATCH_DIR

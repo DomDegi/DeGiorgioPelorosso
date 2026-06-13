@@ -9,7 +9,7 @@ actor "Spacecraft Master-system" as Spacecraft <<Data Source>>
 rectangle "AstraLog-HPC System" {
 
   ' The overarching goal of the human actor
-  usecase "ProduceMissionReports" as UC_Goal
+  usecase "ObtainMissionHealthReports" as UC_Goal
 
   ' The main execution wrapper
   usecase "ExecuteTelemetryProcessing" as UC_Main

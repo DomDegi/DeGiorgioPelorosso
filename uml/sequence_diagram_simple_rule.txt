@@ -16,15 +16,15 @@ activate Orchestrator
 loop Until end of telemetry_stream.csv (Chunking)
     Orchestrator -> Reader: extract_batch(batch_size)
     activate Reader
-    note right of Reader: Reads next N rows\nDiscards malformed JSON
-    Reader --> Orchestrator: List[Valid_Telemetry_Packets]
+    note right of Reader: Reads next N rows\nDiscards malformed records
+    Reader --> Orchestrator: List[Valid_Telemetry_Records]
     deactivate Reader
 
-    loop For each packet in the chunk
-        Orchestrator -> Engine: evaluate_rules(packet)
+    loop For each row in the chunk of records
+        Orchestrator -> Engine: evaluate_rules(batch)
         activate Engine
 
-        Engine -> Engine: evaluate_simple_condition(packet)
+        Engine -> Engine: evaluate_simple_condition(batch)
         note right: Check e.g., TEMP-MAIN > 50.0
 
         alt Condition True (Anomaly detected)
