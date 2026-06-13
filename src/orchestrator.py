@@ -79,7 +79,7 @@ def orchestrator(
         )
 
     if safe_batch_size != batch_size:
-        logger.warning( # <-- Cambia "info" in "warning"
+        logger.warning( 
             f"Auto-adjusting batch_size from {batch_size} to safe multiple: {safe_batch_size}"
         )
         
