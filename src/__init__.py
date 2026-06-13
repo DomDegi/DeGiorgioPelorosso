@@ -67,4 +67,4 @@ protections, safe chunk alignment, and mathematical correlation logic.
 *Developed for the Software Engineering for HPC course (A.Y. 2025-2026).*
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
