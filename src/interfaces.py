@@ -36,7 +36,7 @@ class ITelemetryReader(ABC):
             pl.DataFrame: A batch of clean, validated telemetry ready for rule evaluation.
                 Returns an empty DataFrame when the end of the file/stream is reached.
         """
-        pass
+        ...  # pragma: no cover
 
 
 class IRulesEngine(ABC):
@@ -62,7 +62,7 @@ class IRulesEngine(ABC):
                 - `valid_telemetry`: Rows that triggered no alarms (Nominal).
                 - `alarm_telemetry`: Rows that breached thresholds (Anomalies).
         """
-        pass
+        ...  # pragma: no cover
 
 
 class IStateMemory(ABC):
@@ -85,7 +85,7 @@ class IStateMemory(ABC):
         Returns:
             int: The current consecutive anomaly count.
         """
-        pass
+        ...  # pragma: no cover
 
     @abstractmethod
     def set_consecutive_count(self, rule_id: str, sensor_id: str, count: int) -> None:
@@ -97,7 +97,7 @@ class IStateMemory(ABC):
             sensor_id (str): The ID of the monitored sensor.
             count (int): The final consecutive anomaly count to store.
         """
-        pass
+        ...  # pragma: no cover
 
     @abstractmethod
     def get_last_value(self, sensor_id: str) -> Optional[float]:
@@ -110,7 +110,7 @@ class IStateMemory(ABC):
         Returns:
             Optional[float]: The last recorded float value, or None if no previous record exists.
         """
-        pass
+        ...  # pragma: no cover
 
     @abstractmethod
     def set_last_value(self, sensor_id: str, value: float) -> None:
@@ -121,7 +121,7 @@ class IStateMemory(ABC):
             sensor_id (str): The ID of the monitored sensor.
             value (float): The final sensor value of the current batch.
         """
-        pass
+        ...  # pragma: no cover
 
 
 class IOutputWriter(ABC):
@@ -140,7 +140,7 @@ class IOutputWriter(ABC):
         Args:
             valid_telemetry (pl.DataFrame): The nominal data cleared by the Rules Engine.
         """
-        pass
+        ...  # pragma: no cover
 
     @abstractmethod
     def write_alarms_batch(self, alarm_telemetry: pl.DataFrame) -> None:
@@ -150,4 +150,4 @@ class IOutputWriter(ABC):
         Args:
             alarm_telemetry (pl.DataFrame): The anomalous data flagged by the Rules Engine.
         """
-        pass
+        ...  # pragma: no cover

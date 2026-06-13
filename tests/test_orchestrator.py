@@ -8,6 +8,8 @@ to prevent timestamp corruption.
 """
 
 from unittest.mock import MagicMock
+
+import pytest
 from src.orchestrator import orchestrator
 
 
@@ -69,3 +71,23 @@ def test_oom_protection_and_alignment(caplog):
     # Cap = 5,000,000
     # Safe Multiple = (5,000,000 // 3) * 3 = 4,999,998
     mock_reader.extract_batch.assert_called_once_with(4_999_998)
+
+    def test_orchestrator_raises_value_error():
+        """
+        EDGE CASE: The user asks for an invalid batch size (e.g., 0 or negative).
+        The orchestrator MUST immediately raise a ValueError to prevent a crash.
+        """
+
+    mock_reader = MagicMock()
+    mock_engine = MagicMock()
+    mock_writer = MagicMock()
+
+    # We use pytest.raises to assert that the specific exception is thrown
+    with pytest.raises(ValueError, match="batch_size must be strictly positive"):
+        orchestrator(
+            reader=mock_reader,
+            rules_engine=mock_engine,
+            writer=mock_writer,
+            batch_size=0,  # Invalid batch size
+            total_sensors=3,
+        )
