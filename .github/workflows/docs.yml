@@ -1,5 +1,7 @@
 name: Deploy Documentation
 
+# Triggered only by the semantic release version-bump commit,
+# which always modifies both of these files.
 on:
   push:
     branches: [ "main" ]
@@ -19,7 +21,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v5
       with:
-        ref: main
+        ref: main      # Ensures we get the release commit, not the triggering commit
         fetch-depth: 0
 
     - name: Setup Python
@@ -42,9 +44,9 @@ jobs:
     - name: Generate HTML Documentation
       run: |
         pdoc ./src ./tests -o ./_site --logo-link https://domdegi.github.io/DeGiorgioPelorosso/index.html --logo ""
-        cp ./_site/src.html ./_site/index.html
-        cp -r uml _site/uml
-        cp docs/latex_src/main.pdf ./_site/AstraLog_RASD.pdf
+        cp ./_site/src.html ./_site/index.html      # Adds a homepage to the generated docs
+        cp -r uml _site/uml                         # Copy UML diagrams so images render in the site
+        cp docs/latex_src/main.pdf ./_site/AstraLog_RASD.pdf  # Publish compiled PDF alongside docs
 
     - name: Upload Pages artifact
       uses: actions/upload-pages-artifact@v3
