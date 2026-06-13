@@ -77,7 +77,7 @@ class CSVOutputWriter(IOutputWriter):
         )
 
         with open(self.valid_file_path, "ab") as f:
-            grouped.write_csv(f, separator=";", include_header=False)
+            grouped.write_csv(f, separator=";", include_header=False, quote_style="never")
 
     def write_alarms_batch(self, alarm_telemetry: pl.DataFrame) -> None:
         """
@@ -103,4 +103,4 @@ class CSVOutputWriter(IOutputWriter):
             return
 
         with open(self.alarms_file_path, "ab") as f:
-            formatted_alarms.write_csv(f, separator=";", include_header=False)
+            formatted_alarms.write_csv(f, separator=";", include_header=False, quote_style="never")

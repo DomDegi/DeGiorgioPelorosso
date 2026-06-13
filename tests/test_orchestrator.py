@@ -35,8 +35,7 @@ def test_batch_auto_alignment(caplog):
     )
 
     # 3. Verify the warning was printed
-    assert "splits timestamps" in caplog.text
-    assert "Auto-adjusting to safe multiple: 9" in caplog.text
+    assert "Auto-adjusting batch_size from 10 to safe multiple: 9" in caplog.text
 
     # 4. Verify the Reader was called with the SAFE batch size (9), not 10!
     mock_reader.extract_batch.assert_called_once_with(9)
@@ -64,7 +63,7 @@ def test_oom_protection_and_alignment(caplog):
     )
 
     # Verify the OOM warning triggered
-    assert "exceeds RAM safety limits" in caplog.text
+    assert "exceeds RAM limits" in caplog.text
 
     # Calculate the expected safe alignment:
     # Cap = 5,000,000
