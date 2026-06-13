@@ -93,6 +93,11 @@ Extensive scalability testing was conducted to determine the optimal batch sizes
 - **Local Environment (DeGiorgio CPU):** The optimal throughput was achieved with a batch size of **750,000 rows**, balancing local RAM constraints with CPU thread saturation.
 - **HPC Environment (Galileo100):** Due to the massive 32-core architecture and high-speed memory layout, the optimal batch size shifted to **200,000 rows**. This tighter batching prevents L3-cache misses and ensures continuous, high-speed thread feeding on the compute nodes.
 
+### Simplifications and variations
+**1. Batch Size Auto-Alignment:** The `batch_size`, given as a CLI argument, gets automatically sanitized and adjusted to the nearest multiple of the number of active sensors in the configuration. This ensures that a single timestamp is never mathematically split across two different evaluation batches.
+**2. Fault Tolerance (Malformed Data):** As explicitly validated by the course professor via email correspondence, a single corrupted or malformed sensor reading does not invalidate concurrent data at the same timestamp. Instead of flagging the entire timestamp, the system isolates and drops the corrupted row, safely evaluating the surviving sensor measurements for that timestamp to maximize data retention.
+**3. Batch Accumulation in RAM:** The project guidelines initially specified accumulating valid packets into a "local batch file" before applying the rules. To maximize HPC performance and avoid severe disk I/O bottlenecks, we varied this requirement by accumulating the batches directly in memory (RAM) using Polars DataFrames. Disk writing is strictly deferred to the final output phase for `valid_data.csv` and `alarms.log`.
+
 ### Usage of AI 
 AI assistants (Gemini) were used primarily as a technical consultant to:
 - General debug.
@@ -118,7 +123,6 @@ To run the tests locally:
 ```bash
 pytest
 ```
-
 ---
 
 ## Pipeline & DevOps Workflow
