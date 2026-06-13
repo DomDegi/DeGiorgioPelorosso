@@ -9,10 +9,11 @@ from ingestion, through evaluation, to exportation.
 import polars as pl
 import logging
 
+# Import the Interfaces (Abstract Base Classes)
+from src.interfaces import ITelemetryReader, IRulesEngine, IOutputWriter
+
 MAX_SAFE_BATCH = 5_000_000
 
-# 1. Import the Interfaces (Abstract Base Classes)
-from src.interfaces import ITelemetryReader, IRulesEngine, IOutputWriter
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +53,12 @@ def orchestrator(
 
     if batch_size <= 0:
         raise ValueError(f"batch_size must be strictly positive, got {batch_size}")
-        
+
     if total_sensors <= 0:
-        raise ValueError(f"total_sensors must be strictly positive, got {total_sensors}. Check your config file.")
-        
+        raise ValueError(
+            f"total_sensors must be strictly positive, got {total_sensors}. Check your config file."
+        )
+
     if total_sensors > MAX_SAFE_BATCH:
         raise ValueError(
             f"CRITICAL: total_sensors ({total_sensors}) exceeds the RAM safety limit MAX_SAFE_BATCH ({MAX_SAFE_BATCH}). "
@@ -71,7 +74,7 @@ def orchestrator(
 
     # Aline the batch to the sensors to avoid splitting timestamps
     safe_batch_size = (batch_size // total_sensors) * total_sensors
-    
+
     if safe_batch_size == 0:
         raise ValueError(
             f"Requested batch_size ({batch_size}) after capping is smaller than one full timestamp "
@@ -79,10 +82,10 @@ def orchestrator(
         )
 
     if safe_batch_size != batch_size:
-        logger.warning( 
+        logger.warning(
             f"Auto-adjusting batch_size from {batch_size} to safe multiple: {safe_batch_size}"
         )
-        
+
     batch_size = safe_batch_size
     # ---------------------------------------------------------
     logger.info(f"Configuration loaded -> Batch Size: {batch_size}")

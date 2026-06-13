@@ -198,7 +198,9 @@ class PolarsRulesEngine(IRulesEngine):
                             pl.when(pl.col("block") == first_block)
                             .then(pl.col("streak") + current_streak)
                             .otherwise(pl.col("streak"))
-                            .alias("streak")  # Update the streak with memory carry-over for the first block
+                            .alias(
+                                "streak"
+                            )  # Update the streak with memory carry-over for the first block
                         )
 
                     last_streak = (

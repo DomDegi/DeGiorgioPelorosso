@@ -130,7 +130,7 @@ class CSVTelemetryReader(ITelemetryReader):
     def extract_batch(self, batch_size: int) -> pl.DataFrame:
         """
         Extracts exactly 'batch_size' rows using an optimized internal list buffer.
-        Handles EOF gracefully and skips entirely corrupted chunks without 
+        Handles EOF gracefully and skips entirely corrupted chunks without
         causing premature termination.
         """
         while True:
@@ -166,12 +166,12 @@ class CSVTelemetryReader(ITelemetryReader):
             # 4. Slice the exact required amount safely
             take = min(batch_size, full_buffer.height)
             raw_chunk = full_buffer.head(take)
-            
+
             self._buffer = full_buffer.slice(take, full_buffer.height - take)
 
             # 5. Sanitize and check for Empty DataFrame trap
             sanitized = self._sanitize_batch(raw_chunk)
-            
+
             # If sanitization preserved at least one row, return the batch
             if sanitized.height > 0:
                 return sanitized
