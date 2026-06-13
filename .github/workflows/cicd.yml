@@ -134,7 +134,7 @@ jobs:
   # AUTONOMOUS DOCUMENTATION DEPLOYMENT
   # ==========================================
   deploy-docs:
-    needs: test # Only deploy docs if the code passes its tests
+    needs: release # Only deploy docs if the release step passes (i.e., tests and Docker build pass)
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
