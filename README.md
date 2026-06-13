@@ -160,13 +160,17 @@ pytest
 
 ## Pipeline & DevOps Workflow
 
-Our project utilizes a modern, zero-touch CI/CD pipeline spanning across GitHub and CINECA's internal GitLab.
+Our project utilizes a modern, zero-touch CI/CD pipeline spanning across GitHub and CINECA's internal GitLab. The pipeline is designed with "Defense in Depth" principles, ensuring code quality, security, and optimized deployment.
 
-1. **Continuous Integration (CI):** Upon every push to the `main` branch, a GitHub Action spins up a virtual environment, installs dependencies, and runs the `pytest` suite. It also includes deep **CodeQL Semantic Analysis** for security/vulnerability scanning. If any tests fail, the pipeline automatically uploads the failure logs as GitHub Artifacts to streamline debugging.
-2. **Continuous Deployment (CD) - Docker:** If the tests pass, the pipeline automatically builds a production Docker image using `Dockerfile.prod` and pushes it to the GitHub Container Registry (GHCR).
-3. **Repository Mirroring & Cross-Platform Observability:** A GitHub Actions workflow automatically mirrors the repository to CINECA's internal GitLab. From there, a **GitLab CI/CD runner** automatically pulls the Docker image from GHCR, converts it into a native Singularity `.sif` image, and securely publishes it to the GitLab Package Registry.
-   * *Advanced CI/CD Observability:* To maintain a "single pane of glass" for deployments, our GitHub Action utilizes the GitLab REST API to actively poll the CINECA runner's status. If the HPC containerization process fails on CINECA's servers, the GitHub Action automatically registers the failure, ensuring total deployment transparency.
-4. **Python Document Generation:** Every new commit on `main` triggers the regeneration of the `pdoc` documentation and deploys it as a static website through GitHub Pages.
+1. **Code Quality & Security Gates (CI):** Upon every push to the `main` branch, the pipeline triggers several concurrent safety checks:
+   * **Formatting & Linting Net:** Even though developers use local `pre-commit` hooks, the CI server runs `black` and `ruff` again as a hard merge-blocker to catch bypassed commits.
+   * **Deep Semantic Analysis:** **CodeQL** scans the codebase for vulnerabilities and security flaws.
+   * **Unit Testing & Coverage:** A virtual environment runs the full `pytest` suite. It simultaneously tracks execution coverage via `pytest-cov` and automatically uploads the metrics to **Codecov** for visual tracking. Failure logs are saved as GitHub Artifacts for easy debugging.
+2. **Continuous Deployment (CD) - Docker:** If all tests and security gates pass, the pipeline builds a production Docker image (`Dockerfile.prod`) and pushes it to the GitHub Container Registry (GHCR). This step is optimized using **Docker Layer Caching** (`type=gha`), which reuses unchanged layers to drastically reduce build times and save GitHub Action minutes.
+3. **Automated Semantic Release:** The pipeline analyzes the Git history looking for standard Conventional Commits (e.g., `feat:`, `fix:`). Using **Semantic Release**, it automatically calculates the next version number (SemVer), creates a Git tag (e.g., `v1.2.0`), generates a detailed `CHANGELOG.md`, and publishes an official GitHub Release—all without human intervention.
+4. **Repository Mirroring & Cross-Platform Observability:** A workflow mirrors the repository to CINECA's internal GitLab. From there, a **GitLab CI/CD runner** automatically pulls the Docker image from GHCR, converts it into a native Singularity `.sif` image, and securely publishes it to the CINECA Package Registry.
+   * *Advanced CI/CD Observability:* To maintain a "single pane of glass", our GitHub Action utilizes the GitLab REST API to actively poll the CINECA runner's status. If the HPC containerization fails on CINECA's servers, the GitHub Action automatically registers the failure, ensuring total deployment transparency.
+5. **Python Document Generation:** Every successful commit on `main` triggers the regeneration of the `pdoc` HTML documentation and deploys it as a static website through GitHub Pages.
 
 ---
 
@@ -175,6 +179,7 @@ To enable the automated cross-platform deployment, the following Repository Secr
 
 * `GITLAB_USERNAME`: Your CINECA institutional username.
 * `CINECA_GITLAB_TOKEN`: A Personal Access Token generated on CINECA's GitLab instance. **Required Scopes:** `read_api`, `read_repository`, and `write_repository`.
+* `CODECOV_TOKEN`: The repository upload token from Codecov.io, required to publish the automated test coverage reports.
 * *Note:* GitHub automatically injects the standard `GITHUB_TOKEN` required to build and push to the GitHub Container Registry (GHCR), so no manual configuration is needed for the Docker build phase.
 
 ---
