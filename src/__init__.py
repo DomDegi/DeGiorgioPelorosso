@@ -40,7 +40,7 @@ when processing massive telemetry streams. The vectorized
 Polars Rules Engine effectively bypasses the Python Global Interpreter Lock (GIL), distributing 
 the workload natively across all available Rust threads.
 
-<img src="https://raw.githubusercontent.com/DomDegi/DeGiorgioPelorosso/main/docs/benchmark_plot_galileo100_32CPU_64GB.png" width="800">
+<img src="https://raw.githubusercontent.com/DomDegi/DeGiorgioPelorosso/main/docs/scalability_plot_optimal_batch_200k.png" width="800">
 
 ---
 
