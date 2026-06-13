@@ -41,9 +41,9 @@ cd $SCRATCH_DIR
 for BATCH in "${BATCH_SIZES[@]}"; do
     echo "================================================="
     echo "Testing Batch Size: $BATCH"
-    
+
     TIME_LOG="$SCRATCH_DIR/time_${BATCH}.log"
-    
+
     /usr/bin/time -f "%e,%M" -o $TIME_LOG singularity exec \
         --pwd /workspace \
         --bind $SCRATCH_DIR/inputs:/workspace/inputs \
@@ -55,15 +55,15 @@ for BATCH in "${BATCH_SIZES[@]}"; do
         --output_path output \
         --rules_path inputs/config/Current_rules_sat_alpha.json \
         --sensors_path inputs/config/Current_sensors_sat_alpha.yaml
-        
+
     # Read the formatted output from /usr/bin/time
     METRICS=$(cat $TIME_LOG)
-    
+
     # Append the results: BatchSize,Time(s),Memory(KB)
     echo "$BATCH,$METRICS" >> $RESULTS_FILE
-    
+
     echo "Result: $BATCH,$METRICS"
-    
+
     # Clean up output for the next batch run
     rm -rf $SCRATCH_DIR/output/*
 done

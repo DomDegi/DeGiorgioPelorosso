@@ -16,7 +16,7 @@ build_apptainer:
   script:
     - echo "Pulling Docker image from GHCR and converting to Singularity .sif..."
     - mkdir -p build
-    
+
     # We use 'pull' directly on the GHCR docker image instead of 'build' with a .def file
     # This automatically converts the Docker layers into a flat Singularity image
     - apptainer pull --force build/astralog-hpc.sif docker://ghcr.io/domdegi/astralog-hpc:latest
@@ -39,14 +39,14 @@ publish_sif:
   script:
     - echo "Uploading .sif file to GitLab Package Registry..."
     - VERSION="${CI_COMMIT_SHORT_SHA}"
-    
+
     # Uploads the specific commit version
     - |
       curl --fail \
            --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
            --upload-file build/astralog-hpc.sif \
            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/astralog-sif/${VERSION}/astralog-hpc.sif"
-    
+
     - echo "Updating the 'latest' tag..."
     # Uploads the 'latest' version to easily overwrite the old one
     - |

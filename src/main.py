@@ -1,8 +1,8 @@
 """
 AstraLog-HPC CLI Entry Point.
 
-This module initializes the application environment, configures the dual-output 
-logger (console and file), parses command-line arguments, and invokes the main 
+This module initializes the application environment, configures the dual-output
+logger (console and file), parses command-line arguments, and invokes the main
 system Orchestrator.
 """
 

@@ -1,7 +1,7 @@
 """
 State Tracking Component.
 
-Provides high-speed, local memory solutions for tracking data across the 
+Provides high-speed, local memory solutions for tracking data across the
 boundaries of discrete batches, ensuring continuity for complex rules.
 """
 

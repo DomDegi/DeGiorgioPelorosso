@@ -2,7 +2,7 @@
 # Run this on the login node.
 # It fetches the latest .sif built by your CI/CD pipeline from GitLab.
 
-PROJECT_ID="2955" 
+PROJECT_ID="2955"
 TOKEN=$(cat ~/.gitlab_token) # Read the token saved in your home directory / Create a file with your token inside login node and set permissions to 600 for security
 
 echo "Updating container from GitLab Package Registry..."

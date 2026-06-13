@@ -18,7 +18,7 @@ python -m cProfile -s cumtime -m src.main --batch_size 750000 --input_path input
 By ordering the 362,930 function calls by **cumulative time (`cumtime`)**, we extracted the following architectural insights:
 
 ### 1. Successful GIL Bypassing (The Rust Advantage)
-The profile explicitly shows that the vast majority of the core execution time is spent inside `frame.py:1585(collect)`. 
+The profile explicitly shows that the vast majority of the core execution time is spent inside `frame.py:1585(collect)`.
 * **Metric:** `LazyFrame.collect()` took **6.87 seconds** (over 56% of the total execution time).
 * **Conclusion:** This proves our architectural design is functioning exactly as intended. Instead of Python evaluating rows sequentially (which would trap the execution in the slow Python GIL), the Rules Engine successfully builds a lazy execution graph and passes it to Polars. The actual rule evaluation and boolean masking are being executed natively in Rust across multiple CPU cores, maximizing cluster hardware utilization.
 

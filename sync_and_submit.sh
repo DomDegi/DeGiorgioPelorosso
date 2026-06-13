@@ -9,7 +9,7 @@ echo "Syncing local files to Galileo100..."
 # Sync scripts
 scp job.sh submit.sh $USER@$REMOTE:~/
 
-# Make sure a inputs folder exist on the cluster 
+# Make sure a inputs folder exist on the cluster
 ssh $USER@$REMOTE "mkdir -p ~/inputs/csv_input; mkdir -p ~/inputs/config"
 
 # Sync inputs

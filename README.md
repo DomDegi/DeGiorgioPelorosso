@@ -13,7 +13,7 @@ This repository contains the **Full Track** solution for the **AstraLog-HPC** pr
 ---
 
 ## AstraLog Control
-Here you can access the official documentation hub and web interface for the **AstraLog-HPC** project. 
+Here you can access the official documentation hub and web interface for the **AstraLog-HPC** project.
 
 **[Click here to access AstraLog Control](https://simonereale.github.io/astralog-control/)**
 
@@ -44,7 +44,7 @@ Here you can access the official documentation hub and web interface for the **A
 │   └── csv_input/             # Raw CSV telemetry streams (10X, 50X, 100X, etc.)
 ├── output/                    # Target directory for execution logs and alarms
 ├── scripts/                   # Python data generators, profiling, and scaling utilities
-├── src/                       # Python source code 
+├── src/                       # Python source code
 ├── tests/                     # Pytest automated test suite
 │   └── fixtures/              # Mock data and expected outputs for testing
 ├── uml/                       # Architecture, sequence, and component diagrams
@@ -61,7 +61,7 @@ Here you can access the official documentation hub and web interface for the **A
 
 ---
 
-## Software Organization & Architecture 
+## Software Organization & Architecture
 
 ### Language and Libraries
 - **Language:** Python 3.10
@@ -71,7 +71,7 @@ Here you can access the official documentation hub and web interface for the **A
   - `pytest` (for unit testing in the CI/CD pipeline)
 
 ### Architecture & Relation to Phase 1
-Our software architecture was designed strictly around the **Strategy** and **Dependency Inversion** patterns established during Phase 1. The core logic (`orchestrator.py`) relies entirely on Abstract Base Classes defined in `interfaces.py` (`ITelemetryReader`, `IRulesEngine`, `IStateMemory`, `IOutputWriter`). 
+Our software architecture was designed strictly around the **Strategy** and **Dependency Inversion** patterns established during Phase 1. The core logic (`orchestrator.py`) relies entirely on Abstract Base Classes defined in `interfaces.py` (`ITelemetryReader`, `IRulesEngine`, `IStateMemory`, `IOutputWriter`).
 
 This interface-driven design allowed us to cleanly separate the physical data handling from the logical rule evaluation:
 1. **Reader (`reader.py`):** Utilizes a custom Python list-buffer to bridge Polars' native Rust chunking with the exact sensor-multiple batch sizes required to not split timestamp between batches. It enforces strict type-checking, dropping corrupted rows before they enter the system.
@@ -83,11 +83,11 @@ This interface-driven design allowed us to cleanly separate the physical data ha
 **1. Batch Size Auto-Alignment:** The `batch_size`, given as a CLI argument, gets automatically sanitized and adjusted to the nearest multiple of the number of active sensors in the configuration. This ensures that a single timestamp is never mathematically split across two different evaluation batches.
 **2. Fault Tolerance (Malformed Data):** As explicitly validated by the course professor via email correspondence, a single corrupted or malformed sensor reading does not invalidate concurrent data at the same timestamp. Instead of flagging the entire timestamp, the system isolates and drops the corrupted row, safely evaluating the surviving sensor measurements for that timestamp to maximize data retention.
 **3. Batch Accumulation in RAM:** The project guidelines initially specified accumulating valid packets into a "local batch file" before applying the rules. To maximize HPC performance and avoid severe disk I/O bottlenecks, we varied this requirement by accumulating the batches directly in memory (RAM) using Polars DataFrames. Disk writing is strictly deferred to the final output phase for `valid_data.csv` and `alarms.log`.
-   
+
 ### Distribution and parallelization approach
 *(Note: As a group of two students, we utilized the CSV track. However, our pipeline is heavily parallelized for HPC environments).*
 
-To achieve maximum throughput (processing ~850,000 rows/second), we migrated from a single-threaded Pandas approach to a **Polars / Rust multi-threaded architecture**. 
+To achieve maximum throughput (processing ~850,000 rows/second), we migrated from a single-threaded Pandas approach to a **Polars / Rust multi-threaded architecture**.
 By chunking the CSV into batches, we effectively feed the Polars Rayon thread pool with enough data to utilize a full 32-core SLURM compute node, preventing thread starvation while keeping the overall RAM footprint highly constrained. Mathematical operations like `.diff()` and `.cum_sum()` are executed completely in C/Rust, avoiding the Python Global Interpreter Lock (GIL).
 
 **Scalability and Optimal Batch Sizes:**
@@ -95,7 +95,7 @@ Extensive scalability testing was conducted to determine the optimal batch sizes
 - **Local Environment (DeGiorgio CPU):** The optimal throughput was achieved with a batch size of **750,000 rows**, balancing local RAM constraints with CPU thread saturation.
 - **HPC Environment (Galileo100):** Due to the massive 32-core architecture and high-speed memory layout, the optimal batch size shifted to **200,000 rows**. This tighter batching prevents L3-cache misses and ensures continuous, high-speed thread feeding on the compute nodes.
 
-### Usage of AI 
+### Usage of AI
 AI assistants (Gemini) were used primarily as a technical consultant to:
 - General debug.
 - Understand and debug containerization concepts (Docker to Singularity conversion).
@@ -128,7 +128,7 @@ Our project utilizes a modern, zero-touch CI/CD pipeline spanning across GitHub 
 
 1. **Continuous Integration (CI):** Upon every push to the `main` branch, a GitHub Action spins up a virtual environment, installs dependencies, and runs the `pytest` suite. It also includes deep **CodeQL Semantic Analysis** for security/vulnerability scanning. If any tests fail, the pipeline automatically uploads the failure logs as GitHub Artifacts to streamline debugging.
 2. **Continuous Deployment (CD) - Docker:** If the tests pass, the pipeline automatically builds a production Docker image using `Dockerfile.prod` and pushes it to the GitHub Container Registry (GHCR).
-3. **Repository Mirroring & Cross-Platform Observability:** A GitHub Actions workflow automatically mirrors the repository to CINECA's internal GitLab. From there, a **GitLab CI/CD runner** automatically pulls the Docker image from GHCR, converts it into a native Singularity `.sif` image, and securely publishes it to the GitLab Package Registry. 
+3. **Repository Mirroring & Cross-Platform Observability:** A GitHub Actions workflow automatically mirrors the repository to CINECA's internal GitLab. From there, a **GitLab CI/CD runner** automatically pulls the Docker image from GHCR, converts it into a native Singularity `.sif` image, and securely publishes it to the GitLab Package Registry.
    * *Advanced CI/CD Observability:* To maintain a "single pane of glass" for deployments, our GitHub Action utilizes the GitLab REST API to actively poll the CINECA runner's status. If the HPC containerization process fails on CINECA's servers, the GitHub Action automatically registers the failure, ensuring total deployment transparency.
 4. **Python Document Generation:** Every new commit on `main` triggers the regeneration of the `pdoc` documentation and deploys it as a static website through GitHub Pages.
 

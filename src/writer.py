@@ -1,7 +1,7 @@
 """
 Data Exportation Component.
 
-Handles the physical writing of evaluated data frames to the local filesystem. 
+Handles the physical writing of evaluated data frames to the local filesystem.
 Enforces the strict string formatting required by the project specifications.
 """
 

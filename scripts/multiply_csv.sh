@@ -21,15 +21,15 @@ tail -n +2 "$INPUT_FILE" > "$TMP_BODY"
 for M in "${MULTIPLIERS[@]}"; do
     OUTPUT_FILE="../inputs/csv_input/export_${M}X.csv"
     echo "⏳ Creating $OUTPUT_FILE (multiplying body ${M} times)..."
-    
+
     # 1. Start by placing the header into the new file
     cat "$TMP_HEADER" > "$OUTPUT_FILE"
-    
+
     # 2. Append the body exactly M times
     for ((i=1; i<=M; i++)); do
         cat "$TMP_BODY" >> "$OUTPUT_FILE"
     done
-    
+
     echo "✅ Finished generating $OUTPUT_FILE"
 done
 

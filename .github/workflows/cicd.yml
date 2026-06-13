@@ -22,12 +22,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
-        
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: python
-          
+
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
 
@@ -39,22 +39,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5   
+      uses: actions/checkout@v5
 
     - name: Setup Python
-      uses: actions/setup-python@v6 
+      uses: actions/setup-python@v6
       with:
-        python-version: '3.10' 
+        python-version: '3.10'
 
     - name: Download dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements_dev.txt
 
+    - name: Check Formatting & Linting
+      run: |
+        black --check src/ tests/
+        ruff check src/ tests/
+
     - name: Execute pytest (with JUnit XML output)
       run: |
         python -m pytest --junitxml=pytest-report.xml
-        
+
     - name: Upload Pytest Report on Failure
       if: failure() # Only triggers if the pytest step fails!
       uses: actions/upload-artifact@v4
@@ -65,7 +70,7 @@ jobs:
     - name: Build HTML Documentation
       run: |
         pdoc ./src -o ./docs/pdocs
-  
+
   # ==========================================
   # CD JOB: BUILD & PUSH DOCKER CONTAINER
   # ==========================================
@@ -79,10 +84,10 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5 
+      uses: actions/checkout@v5
 
     - name: Log in to GitHub Container Registry
-      uses: docker/login-action@v4 
+      uses: docker/login-action@v4
       with:
         registry: ghcr.io
         username: ${{ github.actor }}
@@ -93,13 +98,13 @@ jobs:
         echo "OWNER_LC=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
     - name: Build and push Docker image
-      uses: docker/build-push-action@v6 
+      uses: docker/build-push-action@v6
       with:
         context: .
         file: docker/Dockerfile.prod
         push: true
         tags: ghcr.io/${{ env.OWNER_LC }}/astralog-hpc:latest
-  
+
   # ==========================================
   # AUTONOMOUS DOCUMENTATION DEPLOYMENT
   # ==========================================
@@ -114,10 +119,10 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5 
+      uses: actions/checkout@v5
 
     - name: Setup Python
-      uses: actions/setup-python@v6 
+      uses: actions/setup-python@v6
       with:
         python-version: '3.10'
 
@@ -129,7 +134,7 @@ jobs:
 
     - name: Generate HTML Documentation
       run: |
-        pdoc ./src ./tests -o ./_site --logo-link https://domdegi.github.io/DeGiorgioPelorosso/index.html --logo "" 
+        pdoc ./src ./tests -o ./_site --logo-link https://domdegi.github.io/DeGiorgioPelorosso/index.html --logo ""
         cp ./_site/src.html ./_site/index.html      # Adds a homepage to the generated docs
         cp -r uml _site/uml                         # Copy the UML folder into the generated site so images work
 
@@ -145,7 +150,7 @@ jobs:
   # MIRROR TO CINECA GITLAB & AWAIT SIF BUILD
   # ==========================================
   mirror-to-gitlab:
-    needs: test 
+    needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30 # Prevents GitHub from hanging forever if CINECA is down
@@ -153,12 +158,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
-          fetch-depth: 0 
+          fetch-depth: 0
 
       - name: Push to CINECA GitLab
         env:
           # Pulls both username and token securely from GitHub Secrets
-          GITLAB_USERNAME: ${{ secrets.GITLAB_USERNAME }} 
+          GITLAB_USERNAME: ${{ secrets.GITLAB_USERNAME }}
           GITLAB_TOKEN: ${{ secrets.CINECA_GITLAB_TOKEN }}
         run: |
           git remote add gitlab https://oauth2:$GITLAB_TOKEN@gitlab.hpc.cineca.it/$GITLAB_USERNAME/DeGiorgioPelorosso-deploy.git
@@ -168,28 +173,28 @@ jobs:
       - name: Await GitLab Container Build (Apptainer)
         env:
           GITLAB_TOKEN: ${{ secrets.CINECA_GITLAB_TOKEN }}
-          PROJECT_ID: "2955" 
+          PROJECT_ID: "2955"
           COMMIT_SHA: ${{ github.sha }}
         run: |
           echo "Waiting for GitLab to register the pipeline for commit $COMMIT_SHA..."
-          
+
           for i in {1..12}; do
             RESPONSE=$(curl -s --header "PRIVATE-TOKEN: $GITLAB_TOKEN" "https://gitlab.hpc.cineca.it/api/v4/projects/$PROJECT_ID/pipelines?sha=$COMMIT_SHA")
-            
+
             IS_ARRAY=$(echo "$RESPONSE" | jq 'type == "array"')
-            
+
             if [ "$IS_ARRAY" != "true" ]; then
               echo "CINECA GitLab returned an error."
               exit 1
             fi
-            
+
             PIPELINE_ID=$(echo "$RESPONSE" | jq -r '.[0].id // empty')
-            
+
             if [ "$PIPELINE_ID" != "null" ] && [ -n "$PIPELINE_ID" ]; then
               echo "Found GitLab Pipeline ID: $PIPELINE_ID"
               break
             fi
-            
+
             echo "Pipeline not found yet, retrying in 10 seconds..."
             sleep 10
           done
@@ -198,11 +203,11 @@ jobs:
             echo "Error: Could not find GitLab pipeline for this commit."
             exit 1
           fi
-          
+
           echo "Polling GitLab Pipeline Status..."
           while true; do
             STATUS=$(curl -s --header "PRIVATE-TOKEN: $GITLAB_TOKEN" "https://gitlab.hpc.cineca.it/api/v4/projects/$PROJECT_ID/pipelines/$PIPELINE_ID" | jq -r '.status')
-            
+
             if [ "$STATUS" == "success" ]; then
               echo "SUCCESS: GitLab successfully built and published the .sif container!"
               exit 0
@@ -210,7 +215,7 @@ jobs:
               echo "ERROR: GitLab pipeline failed to build the container! Check CINECA GitLab logs."
               exit 1
             fi
-            
+
             echo "Current status: $STATUS... waiting 15 seconds."
             sleep 15
           done

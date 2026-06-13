@@ -1,8 +1,8 @@
 """
 Business Logic and Rule Evaluation Component.
 
-This module is the mathematical heart of the application. It evaluates clean 
-telemetry against predefined JSON rules using vectorized Polars operations, 
+This module is the mathematical heart of the application. It evaluates clean
+telemetry against predefined JSON rules using vectorized Polars operations,
 optimizing for High-Performance Computing (HPC) execution speeds.
 """
 

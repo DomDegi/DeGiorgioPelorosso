@@ -1,8 +1,8 @@
 """
 AstraLog-HPC Core Orchestrator.
 
-This module contains the central execution loop. It binds the abstract interfaces 
-to their concrete implementations and manages the lifecycle of the telemetry data 
+This module contains the central execution loop. It binds the abstract interfaces
+to their concrete implementations and manages the lifecycle of the telemetry data
 from ingestion, through evaluation, to exportation.
 """
 

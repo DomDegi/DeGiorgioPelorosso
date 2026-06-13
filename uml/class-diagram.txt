@@ -104,7 +104,7 @@ Orchestrator -left-> IOutputWriter : " Exports via"
 CSVOutputWriter .up.|> IOutputWriter
 
 ' 5. CROSS-DEPENDENCY (Outer Ring to Inner Ring)
-' Using "o-up->" fights the gravity of Graphviz, forcing IStateMemory to stay 
+' Using "o-up->" fights the gravity of Graphviz, forcing IStateMemory to stay
 ' on the middle horizontal plane instead of being dragged to the bottom.
 PolarsRulesEngine o-up-> IStateMemory : " Tracks state via"
 

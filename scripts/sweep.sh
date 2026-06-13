@@ -11,7 +11,7 @@ echo "Batch Size,Total Time (s),Max RAM (KB)" > $OUTPUT_LOG
 for BATCH in "${BATCH_SIZES[@]}"; do
     echo "====================================="
     echo "Testing Batch Size: $BATCH"
-    
+
     # We use /usr/bin/time to capture execution time (-e) and Max RAM (-M)
     # 2>&1 redirects the time output so we can capture it
     OUTPUT=$(/usr/bin/time -f "%e,%M" python3 -m src.main \
@@ -23,7 +23,7 @@ for BATCH in "${BATCH_SIZES[@]}"; do
 
     # Extract the last line of the output which contains our "Time,RAM" string
     METRICS=$(echo "$OUTPUT" | tail -n 1)
-    
+
     # Save to our CSV
     echo "$BATCH,$METRICS" >> $OUTPUT_LOG
     echo "Result saved: $BATCH,$METRICS"

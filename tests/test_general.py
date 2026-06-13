@@ -1,9 +1,9 @@
 """
 End-to-End Integration Testing.
 
-This module constructs a completely isolated, temporary file system utilizing pytest's 
-`tmp_path`. It generates mock YAML/JSON configurations and raw CSV data to verify that 
-the fully-assembled Composition Root successfully drives data from ingestion to the 
+This module constructs a completely isolated, temporary file system utilizing pytest's
+`tmp_path`. It generates mock YAML/JSON configurations and raw CSV data to verify that
+the fully-assembled Composition Root successfully drives data from ingestion to the
 final `alarms.log` and `valid_data.csv` outputs.
 """
 

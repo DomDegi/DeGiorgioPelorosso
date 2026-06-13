@@ -47,16 +47,16 @@ for DATASET in "${DATASETS[@]}"; do
     # Extract filename and row count using string manipulation
     FILE="${DATASET%%:*}"
     ROWS="${DATASET##*:}"
-    
+
     echo "================================================="
     echo "Testing dataset: $FILE ($ROWS rows)"
-    
+
     # Copy the specific CSV to scratch
     cp $HOME/inputs/csv_input/$FILE $SCRATCH_DIR/inputs/csv_input/
-    
+
     # Start timer
     START_TIME=$(date +%s)
-    
+
     # Run the pipeline (using your optimal batch size of 200,000)
     singularity exec \
         --pwd /workspace \
@@ -73,15 +73,15 @@ for DATASET in "${DATASETS[@]}"; do
     # Stop timer
     END_TIME=$(date +%s)
     ELAPSED=$(($END_TIME - $START_TIME))
-    
+
     echo "Finished $FILE in $ELAPSED seconds."
-    
+
     # Save the result to our tracking CSV
     echo "$ROWS,$ELAPSED" >> $RESULTS_FILE
-    
+
     # Clean up the output folder so the next run starts fresh
     rm -rf $SCRATCH_DIR/output/*
-    
+
     # Remove the specific CSV to free up space for the next loop
     rm $SCRATCH_DIR/inputs/csv_input/$FILE
 done

@@ -11,7 +11,7 @@ To maintain ubiquitous language across the documentation and codebase, the follo
 * **Telemetry:** The domain-specific aerospace term representing the actual data payload (e.g., sensor readings like `VOLT-MAIN`).
 
 ### 1.2 `ITelemetryReader` (Data Ingestion)
-This interface acts as the gateway into the system. 
+This interface acts as the gateway into the system.
 * **Design Rationale:** It completely abstracts the source of the incoming data. The system does not need to know if it is reading from a local CSV, an S3 bucket, or a live data stream.
 * **Core Contract:** The `extract_batch(batch_size)` method defines a strict boundary where physical data chunks are ingested, sanitized, and yielded to the orchestrator as a clean, standardized Polars `DataFrame`. The `batch_size` parameter acts as a strict memory-governor to prevent RAM exhaustion on HPC nodes.
 
@@ -23,7 +23,7 @@ This is the mathematical heart of the application.
 ### 1.4 `IStateMemory` (Cross-Batch Persistence)
 This component solves the critical problem of analyzing time-series data that is artificially cut into memory chunks.
 * **Design Rationale:** Many ESA rules are context-dependent (e.g., *Stateful* rules checking for 5 consecutive errors, or *Step* rules comparing the current value to the previous one). Because HPC processing requires chunking data, a streak might start in "Batch A" and finish in "Batch B". This interface obscures how the system "remembers" the past.
-* **Core Contracts:** 
+* **Core Contracts:**
   * **Stateful Tracking:** `get_current_count` and `set_consecutive_count` allow the rules engine to pull the active anomaly streak of a specific sensor from the previous batch, and overwrite it with the final streak at the end of the current batch.
   * **Step Difference Tracking:** `get_last_value` and `set_last_value` provide the exact float value of a sensor at the final timestamp of a batch, providing the mathematical anchor required to calculate differentials ($T_n - T_{n-1}$) at the start of the next batch.
 
@@ -34,12 +34,12 @@ This interface handles the final physical manifestation of the processed data.
 
 ## 2. Core Business Logic: The Rules Engine (`rules_engine.py`)
 
-The `PolarsRulesEngine` is the computational heart of the AstraLog-HPC system. Moving away from single-threaded, Python-bound execution (e.g., standard Pandas or native loops), this engine leverages **Polars**, a Rust-backed DataFrame library. 
+The `PolarsRulesEngine` is the computational heart of the AstraLog-HPC system. Moving away from single-threaded, Python-bound execution (e.g., standard Pandas or native loops), this engine leverages **Polars**, a Rust-backed DataFrame library.
 
 This design choice allows the engine to translate complex JSON business rules into Polars Expressions (`pl.Expr`), which are then executed asynchronously across the HPC node's entire CPU core topology, bypassing the Python Global Interpreter Lock (GIL) entirely.
 
 ### 2.1 Rule Ingestion & AST Translation
-Upon initialization, the engine reads the configuration JSON, sanitizes rule priorities (`HIGH`, `MEDIUM`, `LOW`), and sorts them. Higher priority rules are sorted first to ensure deterministic sorting in the final output phase. 
+Upon initialization, the engine reads the configuration JSON, sanitizes rule priorities (`HIGH`, `MEDIUM`, `LOW`), and sorts them. Higher priority rules are sorted first to ensure deterministic sorting in the final output phase.
 The internal method `_get_op_expr` acts as an Abstract Syntax Tree (AST) translator, converting string-based JSON operators (e.g., `">="`) into vectorized Polars expressions.
 
 ### 2.2 Phase 1: Vectorized Base Rules & The "HPC Bridge"
@@ -52,7 +52,7 @@ Phase 1 evaluates `simple`, `step_difference`, and `stateful` rules. Because the
   To calculate $T_n - T_{n-1}$, the engine uses the natively vectorized `.diff()` function. However, the very first row of a chunk will always yield a `null` differential. The engine bridges the memory gap by querying the `IStateMemory` for the final value of the previous chunk, and cleanly patches only the `null` using `.fill_null(pl.col('value') - last_val)`.
 
 * **Stateful Evaluation (Avoiding $O(N^2)$ complexity):**
-  Calculating consecutive streaks (e.g., "5 consecutive errors") using standard iteration destroys L3-cache efficiency. Instead, the engine groups contiguous anomalies into mathematical "blocks" using `(~op_mask).cast(pl.Int32).cum_sum()`. It then calculates the streak strictly at the C/Rust level using a windowed cumulative sum: `.cum_sum().over('block')`. 
+  Calculating consecutive streaks (e.g., "5 consecutive errors") using standard iteration destroys L3-cache efficiency. Instead, the engine groups contiguous anomalies into mathematical "blocks" using `(~op_mask).cast(pl.Int32).cum_sum()`. It then calculates the streak strictly at the C/Rust level using a windowed cumulative sum: `.cum_sum().over('block')`.
   If the very first measurement of a new chunk is a breach, it queries `IStateMemory` and adds the inherited streak from the previous chunk to the current calculation.
 
 ### 2.3 Phase 2: Correlation Rules
@@ -76,7 +76,7 @@ The core interface contract requires outputting two entirely separate DataFrames
 The `DictStateMemory` class provides the concrete implementation for the `IStateMemory` interface. Because the HPC orchestrator artificially slices continuous time-series data into discrete, memory-safe physical chunks, this module acts as the "bridge" that allows the system to remember the mathematical context of previous chunks.
 
 ### 3.1 $O(1)$ In-Memory Architecture
-In earlier iterations or traditional web applications, state might be delegated to an external key-value store like Redis (as seen in the project's initial experimental Docker stacks). However, given the required throughput of ~850,000 rows/second on the CINECA Galileo100 cluster, external database I/O latency would create a massive bottleneck. 
+In earlier iterations or traditional web applications, state might be delegated to an external key-value store like Redis (as seen in the project's initial experimental Docker stacks). However, given the required throughput of ~850,000 rows/second on the CINECA Galileo100 cluster, external database I/O latency would create a massive bottleneck.
 
 To keep pace with the Rust/Polars multi-threaded engine, `DictStateMemory` utilizes native Python dictionaries. This guarantees absolute $O(1)$ algorithmic time complexity for all read and write operations, keeping memory lookups strictly within the CPU's local RAM.
 
@@ -90,10 +90,10 @@ To prevent these rules from overwriting each other's streaks, the class employs 
 ### 3.3 State Tracking Pipelines
 The memory module is divided into two distinct tracking pipelines to satisfy the core rules:
 
-* **Stateful Rules (`_consecutive_counts`):** 
+* **Stateful Rules (`_consecutive_counts`):**
   Stores standard integers representing the active anomaly streak. If a chunk ends with an active breach, the rules engine calls `set_consecutive_count` to stash the streak. When the next chunk begins, `get_current_count` seamlessly reinjects that integer into the Polars cumulative sum calculation.
-  
-* **Step-Difference Rules (`_last_values`):** 
+
+* **Step-Difference Rules (`_last_values`):**
   To calculate $T_n - T_{n-1}$, the exact physical value of a sensor at the final timestamp of a batch must be preserved. The `_last_values` dictionary maps the raw `sensor_id` directly to a float. This provides the mathematical anchor needed by the engine to calculate the `.diff()` on the very first row of the incoming batch.
 
 ## 4. I/O Operations: Ingestion & Exportation (`reader.py` & `writer.py`)
@@ -105,11 +105,11 @@ The I/O layer handles the physical movement of data between the cluster's high-s
 The reader does more than just load CSV files; it acts as a highly optimized memory governor and strict firewall against corrupted data.
 
 * **The Exact-Slicing Buffer Problem:**
-  Polars' native `read_csv_batched` pulls data from disk in strict 50,000-row physical chunks. However, to prevent mathematical errors, the orchestrator requires *exact* batch sizes (e.g., multiples of the active sensor count) to ensure that a single timestamp is never split across two batches. 
+  Polars' native `read_csv_batched` pulls data from disk in strict 50,000-row physical chunks. However, to prevent mathematical errors, the orchestrator requires *exact* batch sizes (e.g., multiples of the active sensor count) to ensure that a single timestamp is never split across two batches.
   The `extract_batch` method solves this using an internal list-buffer. Instead of iteratively concatenating small DataFrames (which causes massive $O(N^2)$ memory reallocation overhead), it appends references to a Python list, performs exactly *one* `pl.concat()`, slices the exact `batch_size` needed, and stashes the remainder in `self._buffer` for the next loop.
 
 * **Strict Type-Checking (The Firewall):**
-  Sensor data can be noisy or corrupted. The `_sanitize_batch` method guarantees that no malformed data ever reaches the Rules Engine. 
+  Sensor data can be noisy or corrupted. The `_sanitize_batch` method guarantees that no malformed data ever reaches the Rules Engine.
   It reads all data as strings first, then attempts a strict `.cast(pl.Float64)` and a datetime parse. Any row containing non-numeric sensor values or corrupted timestamps is safely dropped (`drop_nulls`). Missing priorities are automatically patched to `LOW`. This ensures the Rust engine never panics due to unexpected `NaN` or type-mismatch errors during mathematical operations.
 
 ### 4.2 Data Exportation (`CSVOutputWriter`)
@@ -117,8 +117,8 @@ The reader does more than just load CSV files; it acts as a highly optimized mem
 Once the Rules Engine separates the clean telemetry from the anomalies, the `CSVOutputWriter` handles formatting and saving the data to the cluster's `$WORK` directory.
 
 * **Bypassing Python String Formatting:**
-  The ESA Call for Tenders requires nominal data to be grouped by timestamp and formatted specifically (e.g., `TIMESTAMP;NOMINAL;VOLT-MAIN:5.2|TEMP:12.1`). 
-  Iterating through millions of rows using Python's `f-strings` or Pandas' `.apply()` would completely stall the pipeline. Instead, the writer leverages Polars' native string manipulation at the Rust level. It uses `pl.concat_str` to build the `sensor:value` pairs, groups by timestamp, and collapses the arrays using the blazing-fast `.list.join("|")` function. 
+  The ESA Call for Tenders requires nominal data to be grouped by timestamp and formatted specifically (e.g., `TIMESTAMP;NOMINAL;VOLT-MAIN:5.2|TEMP:12.1`).
+  Iterating through millions of rows using Python's `f-strings` or Pandas' `.apply()` would completely stall the pipeline. Instead, the writer leverages Polars' native string manipulation at the Rust level. It uses `pl.concat_str` to build the `sensor:value` pairs, groups by timestamp, and collapses the arrays using the blazing-fast `.list.join("|")` function.
 
 * **Append-Only Disk Writes:**
   To maintain a tiny RAM footprint, the writer does not accumulate the final output in memory. Both `write_valid_batch` and `write_alarms_batch` open their respective files in append binary mode (`'ab'`). As soon as a batch is processed, it is immediately flushed to disk (`write_csv(f, ...)`), keeping the memory completely clear for the next chunk of telemetry.

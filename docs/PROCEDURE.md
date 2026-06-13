@@ -1,6 +1,6 @@
 # 🚀 AstraLog-HPC: Cluster Operating Procedure
 
-This document outlines the "Gold Standard" HPC workflow used for this project. The architecture strictly separates the containerized code from the input data. 
+This document outlines the "Gold Standard" HPC workflow used for this project. The architecture strictly separates the containerized code from the input data.
 
 Because CINECA Galileo100 compute nodes do not have internet access, we utilize a wrapper script (`submit.sh`) on the login node to pull the container from the GitHub Container Registry before submitting the job to the compute nodes via SLURM.
 
@@ -40,7 +40,7 @@ If you want to change the target CSV or config files, simply edit the variables 
 3. **Monitor the job:**
    ```bash
    squeue -u <username>
-   
+
 ### PHASE 3: DOWNLOAD RESULTS
 Once the job finishes, pull the generated data back to your local machine. Run this from your **LOCAL** terminal:
 

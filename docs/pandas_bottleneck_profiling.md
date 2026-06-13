@@ -1,8 +1,8 @@
 # Performance Profiling: The Pandas Bottleneck
 
-**Date:** May 7, 2026  
-**Environment:** CINECA Galileo100 / DevContainer (16 Cores, 32GB RAM)  
-**Task:** Process a 5,000,000-row batch of CSV telemetry data.  
+**Date:** May 7, 2026
+**Environment:** CINECA Galileo100 / DevContainer (16 Cores, 32GB RAM)
+**Task:** Process a 5,000,000-row batch of CSV telemetry data.
 **Architectural Decision:** Migrate core data processing from `pandas` to `polars`.
 
 ## 1. The Profiling Command
@@ -14,7 +14,7 @@ python -m cProfile -s cumtime -m src.main \
   --input_path csv_input/export_100X.csv \
   --output_path output/ \
   --rules_path config/Current_rules_sat_alpha.json \
-  --sensors_path config/Current_sensors_sat_alpha.yaml 
+  --sensors_path config/Current_sensors_sat_alpha.yaml
 ```
 
 ## 2. The Execution Summary

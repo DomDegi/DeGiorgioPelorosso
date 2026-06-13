@@ -1,8 +1,8 @@
 """
 Data Ingestion Component.
 
-This module provides the concrete implementation for reading telemetry streams 
-from CSV files. It leverages Polars for high-speed batched reading while actively 
+This module provides the concrete implementation for reading telemetry streams
+from CSV files. It leverages Polars for high-speed batched reading while actively
 sanitizing corrupted data to ensure schema compliance.
 """
 

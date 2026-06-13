@@ -3,7 +3,7 @@
   "dockerComposeFile": "./docker-compose.yml",
   "service": "dev-env",
   "workspaceFolder": "/workspace/DeGiorgioPelorosso",
-  
+
   "customizations": {
     "vscode": {
       "settings": {
