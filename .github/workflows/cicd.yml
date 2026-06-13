@@ -157,11 +157,20 @@ jobs:
         pip install -r requirements_dev.txt
         pip install pdoc>=16.0.0
 
+    - name: Compile LaTeX Design Document
+      uses: xu-cheng/latex-action@v3
+      with:
+        root_file: main.tex
+        working_directory: docs/latex_src
+
     - name: Generate HTML Documentation
       run: |
         pdoc ./src ./tests -o ./_site --logo-link https://domdegi.github.io/DeGiorgioPelorosso/index.html --logo ""
         cp ./_site/src.html ./_site/index.html      # Adds a homepage to the generated docs
         cp -r uml _site/uml                         # Copy the UML folder into the generated site so images work
+
+        # Move the newly compiled PDF into the website folder so it gets published!
+        cp docs/latex_src/main.pdf ./_site/AstraLog_RASD.pdf
 
     - name: Upload Pages artifact
       uses: actions/upload-pages-artifact@v3
@@ -265,5 +274,9 @@ jobs:
 
       - name: Semantic Release
         uses: cycjimmy/semantic-release-action@v4
+        with:
+          extra_plugins: |
+            @semantic-release/exec
+            @semantic-release/git
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Automatically injected by GitHub
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

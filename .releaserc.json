@@ -3,6 +3,19 @@
   "plugins": [
     "@semantic-release/commit-analyzer",
     "@semantic-release/release-notes-generator",
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "sed -i 's/__version__ = .*/__version__ = \"${nextRelease.version}\"/' src/__init__.py"
+      }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": ["src/__init__.py"],
+        "message": "chore(release): sync __init__.py version to ${nextRelease.version} [skip ci]"
+      }
+    ],
     "@semantic-release/github"
   ]
 }

@@ -1,8 +1,10 @@
 # AstraLog-HPC: Full Track Implementation
 
 [![CI/CD Pipeline](https://github.com/DomDegi/DeGiorgioPelorosso/actions/workflows/cicd.yml/badge.svg)](https://github.com/DomDegi/DeGiorgioPelorosso/actions/workflows/cicd.yml)
+[![Codecov](https://codecov.io/gh/DomDegi/DeGiorgioPelorosso/branch/main/graph/badge.svg)](https://app.codecov.io/github/DomDegi/DeGiorgioPelorosso/)
 [![Live Documentation](https://img.shields.io/badge/docs-Live_API_Reference-blue.svg)](https://domdegi.github.io/DeGiorgioPelorosso/index.html)
-[![Version](https://img.shields.io/badge/version-1.0.0-success.svg)]()
+[![Design Document](https://img.shields.io/badge/PDF-Phase_1_Design_Document-red.svg)](https://domdegi.github.io/DeGiorgioPelorosso/AstraLog_RASD.pdf)
+[![Version](https://img.shields.io/github/v/release/DomDegi/DeGiorgioPelorosso?sort=semver&color=success)](https://github.com/DomDegi/DeGiorgioPelorosso/releases/latest)
 
 ### **Software Engineering for HPC - A.Y. 2025-2026**
 
@@ -166,11 +168,12 @@ Our project utilizes a modern, zero-touch CI/CD pipeline spanning across GitHub 
    * **Formatting & Linting Net:** Even though developers use local `pre-commit` hooks, the CI server runs `black` and `ruff` again as a hard merge-blocker to catch bypassed commits.
    * **Deep Semantic Analysis:** **CodeQL** scans the codebase for vulnerabilities and security flaws.
    * **Unit Testing & Coverage:** A virtual environment runs the full `pytest` suite. It simultaneously tracks execution coverage via `pytest-cov` and automatically uploads the metrics to **Codecov** for visual tracking. Failure logs are saved as GitHub Artifacts for easy debugging.
-2. **Continuous Deployment (CD) - Docker:** If all tests and security gates pass, the pipeline builds a production Docker image (`Dockerfile.prod`) and pushes it to the GitHub Container Registry (GHCR). This step is optimized using **Docker Layer Caching** (`type=gha`), which reuses unchanged layers to drastically reduce build times and save GitHub Action minutes.
+2. **Continuous Deployment (CD) - Docker:** If all tests and security gates pass, the pipeline builds a production Docker image (`Dockerfile.prod`) and pushes it to the GitHub Container Registry (GHCR). This step is optimized using **Docker Layer Caching**, which reuses unchanged layers to drastically reduce build times and save GitHub Action minutes.
+   * *Production Artifact Validation:* Before finishing, the pipeline spins up the freshly pushed GHCR container in an isolated environment, dynamically volume-mounts the test suite into it, and executes it. This guarantees that the exact production environment contains all necessary dependencies and is fully operational before moving to the cluster.
 3. **Automated Semantic Release:** The pipeline analyzes the Git history looking for standard Conventional Commits (e.g., `feat:`, `fix:`). Using **Semantic Release**, it automatically calculates the next version number (SemVer), creates a Git tag (e.g., `v1.2.0`), generates a detailed `CHANGELOG.md`, and publishes an official GitHub Release—all without human intervention.
 4. **Repository Mirroring & Cross-Platform Observability:** A workflow mirrors the repository to CINECA's internal GitLab. From there, a **GitLab CI/CD runner** automatically pulls the Docker image from GHCR, converts it into a native Singularity `.sif` image, and securely publishes it to the CINECA Package Registry.
    * *Advanced CI/CD Observability:* To maintain a "single pane of glass", our GitHub Action utilizes the GitLab REST API to actively poll the CINECA runner's status. If the HPC containerization fails on CINECA's servers, the GitHub Action automatically registers the failure, ensuring total deployment transparency.
-5. **Python Document Generation:** Every successful commit on `main` triggers the regeneration of the `pdoc` HTML documentation and deploys it as a static website through GitHub Pages.
+5. **Autonomous Documentation Compilation:** Every successful commit on `main` triggers the regeneration of the `pdoc` HTML API documentation. Additionally, the pipeline spins up a cloud-based TeX Live container to automatically recompile our Phase 1 LaTeX source code into a PDF (`AstraLog_RASD.pdf`). Both the API hub and the Design Document are then autonomously deployed as a static website through GitHub Pages.
 
 ---
 

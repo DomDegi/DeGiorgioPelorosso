@@ -6,6 +6,8 @@ Welcome to the API Reference for the **AstraLog-HPC** project.
 This system was designed and developed to simulate a high-performance telemetry
 ingestion and monitoring pipeline for the **European Space Agency (ESA)**.
 
+-> **[Click here to download the Phase 1 Design Document (RASD PDF)](AstraLog_RASD.pdf)**
+
 ---
 
 ### System Architecture (Component View)
