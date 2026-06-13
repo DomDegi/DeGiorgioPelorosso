@@ -119,6 +119,17 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max # Caches Docker layers via GitHub Actions cache
 
+    - name: Validate Published Docker Image
+      run: |
+        echo "Spinning up the production container to verify internal integrity..."
+        # We mount the tests directory into the container and execute pytest
+        # Note: Assumes your Dockerfile sets the WORKDIR to /workspace or /app.
+        # Update '/workspace' below if your Dockerfile uses a different directory!
+        docker run --rm \
+          -v ${{ github.workspace }}/tests:/workspace/tests \
+          ghcr.io/${{ env.OWNER_LC }}/astralog-hpc:latest \
+          python -m pytest tests/
+
   # ==========================================
   # AUTONOMOUS DOCUMENTATION DEPLOYMENT
   # ==========================================
