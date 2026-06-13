@@ -127,7 +127,7 @@ class CSVTelemetryReader(ITelemetryReader):
 
         return clean_batch
 
-def extract_batch(self, batch_size: int) -> pl.DataFrame:
+    def extract_batch(self, batch_size: int) -> pl.DataFrame:
         """
         Extracts exactly 'batch_size' rows using an optimized internal list buffer.
         Handles EOF gracefully and skips entirely corrupted chunks without 
