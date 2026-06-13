@@ -24,6 +24,26 @@ from the concrete implementations via Abstract Base Classes (Interfaces).
 
 ---
 
+### HPC Performance & Scalability
+
+#### 1. Batch Size Optimization (Galileo100)
+To maximize hardware utilization on the CINECA Galileo100 compute nodes (32 CPUs, 64GB RAM were used), the 
+system underwent strict empirical profiling. The resulting "bathtub curve" identified the 
+optimal operational batch size (200,000 rows), perfectly balancing the computational chunking 
+overhead against raw memory capacity.
+
+![Batch Benchmark on Galileo100](https://raw.githubusercontent.com/DomDegi/DeGiorgioPelorosso/main/docs/benchmark_plot_galileo100_32CPU_64GB.png)
+
+#### 2. Linear Scalability
+Using the empirically optimized batch size, the pipeline exhibits near-perfect linear scalability 
+when processing massive telemetry streams. The vectorized 
+Polars Rules Engine effectively bypasses the Python Global Interpreter Lock (GIL), distributing 
+the workload natively across all available Rust threads.
+
+![Scalability Plot](https://raw.githubusercontent.com/DomDegi/DeGiorgioPelorosso/main/docs/scalability_plot_optimal_batch_200k.png)
+
+---
+
 ### Navigation
 Use the **sidebar on the left** to explore the individual modules, abstract interfaces, 
 and concrete classes that power the system:
