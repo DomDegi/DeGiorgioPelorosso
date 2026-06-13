@@ -1,0 +1,55 @@
+name: Deploy Documentation
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'src/__init__.py'
+      - 'docs/latex_src/main.tex'
+
+jobs:
+  deploy-docs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+      with:
+        ref: main
+        fetch-depth: 0
+
+    - name: Setup Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.10'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements_dev.txt
+        pip install pdoc>=16.0.0
+
+    - name: Compile LaTeX Design Document
+      uses: xu-cheng/latex-action@v3
+      with:
+        root_file: main.tex
+        working_directory: docs/latex_src
+
+    - name: Generate HTML Documentation
+      run: |
+        pdoc ./src ./tests -o ./_site --logo-link https://domdegi.github.io/DeGiorgioPelorosso/index.html --logo ""
+        cp ./_site/src.html ./_site/index.html
+        cp -r uml _site/uml
+        cp docs/latex_src/main.pdf ./_site/AstraLog_RASD.pdf
+
+    - name: Upload Pages artifact
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: './_site'
+
+    - name: Deploy to GitHub Pages
+      uses: actions/deploy-pages@v4
