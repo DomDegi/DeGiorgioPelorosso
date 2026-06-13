@@ -184,7 +184,7 @@ jobs:
           git push gitlab --all --force
           git push gitlab --tags --force
 
-      - name: Await GitLab Container Build & SIF Validation
+      - name: Await GitLab Container Build (Apptainer)
         env:
           GITLAB_TOKEN: ${{ secrets.CINECA_GITLAB_TOKEN }}
           PROJECT_ID: "2955"
@@ -223,10 +223,10 @@ jobs:
             STATUS=$(curl -s --header "PRIVATE-TOKEN: $GITLAB_TOKEN" "https://gitlab.hpc.cineca.it/api/v4/projects/$PROJECT_ID/pipelines/$PIPELINE_ID" | jq -r '.status')
 
             if [ "$STATUS" == "success" ]; then
-              echo "SUCCESS: GitLab successfully built, TESTED, and published the .sif container!"
+              echo "SUCCESS: GitLab successfully built and published the .sif container!"
               exit 0
             elif [ "$STATUS" == "failed" ] || [ "$STATUS" == "canceled" ]; then
-              echo "ERROR: GitLab pipeline failed during build or artifact testing! Check CINECA GitLab logs."
+              echo "ERROR: GitLab pipeline failed to build the container! Check CINECA GitLab logs."
               exit 1
             fi
 
