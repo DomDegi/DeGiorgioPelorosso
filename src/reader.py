@@ -127,42 +127,62 @@ class CSVTelemetryReader(ITelemetryReader):
 
         return clean_batch
 
-    def extract_batch(self, batch_size: int) -> pl.DataFrame:
+def extract_batch(self, batch_size: int) -> pl.DataFrame:
         """
         Extracts exactly 'batch_size' rows using an optimized internal list buffer.
-
-        Reads from the underlying Polars batched reader until enough rows are collected,
-        slices the exact requested amount, and leaves the remainder in memory for the
-        next loop iteration.
-
-        Args:
-            batch_size (int): The exact number of rows requested by the orchestrator.
-
-        Returns:
-            pl.DataFrame: A sanitized batch of telemetry data.
+        Handles EOF gracefully and skips entirely corrupted chunks without 
+        causing premature termination.
         """
+        while True:
+            # 1. Put the leftover buffer into a list
+            batches_to_concat = [self._buffer] if self._buffer.height > 0 else []
+            current_height = self._buffer.height
+            reached_eof = False
 
-        # 1. Put the leftover buffer into a list
-        batches_to_concat = [self._buffer] if self._buffer.height > 0 else []
-        current_height = self._buffer.height
+            # 2. Append new batches to the list
+            while current_height < batch_size:
+                batches = self._batched_reader.next_batches(1)
+                if not batches:
+                    reached_eof = True
+                    break
+                batches_to_concat.append(batches[0])
+                current_height += batches[0].height
 
-        # 2. Append new batches to the list
-        while current_height < batch_size:
-            batches = self._batched_reader.next_batches(1)
-            if not batches:
-                break
-            batches_to_concat.append(batches[0])
-            current_height += batches[0].height
+            # If NOT really anything left to read and buffer is empty, return empty DataFrame with schema
+            if current_height == 0:
+                logger.info("End of CSV telemetry stream reached.")
+                return pl.DataFrame(
+                    schema={
+                        "timestamp": pl.Utf8,
+                        "sensor_id": pl.Utf8,
+                        "value": pl.Float64,
+                        "priority": pl.Utf8,
+                    }
+                )
 
-        if current_height == 0:
-            logger.info("End of CSV telemetry stream reached.")
-            return pl.DataFrame(schema=self.schema)
+            # 3. Concatenate everything exactly ONCE
+            full_buffer = pl.concat(batches_to_concat)
 
-        # 3. Concatenate everything exactly ONCE
-        full_buffer = pl.concat(batches_to_concat)
+            # 4. Slice the exact required amount safely
+            take = min(batch_size, full_buffer.height)
+            raw_chunk = full_buffer.head(take)
+            
+            self._buffer = full_buffer.slice(take, full_buffer.height - take)
 
-        # 4. Slice the exact required amount and keep the rest in the buffer
-        raw_chunk = full_buffer.head(batch_size)
-        self._buffer = full_buffer.tail(full_buffer.height - batch_size)
+            # 5. Sanitize and check for Empty DataFrame trap
+            sanitized = self._sanitize_batch(raw_chunk)
+            
+            # If sanitization preserved at least one row, return the batch
+            if sanitized.height > 0:
+                return sanitized
 
-        return self._sanitize_batch(raw_chunk)
+            # Sanification dropped eveything, but we are at EOF, return
+            if reached_eof and self._buffer.height == 0:
+                return pl.DataFrame(
+                    schema={
+                        "timestamp": pl.Utf8,
+                        "sensor_id": pl.Utf8,
+                        "value": pl.Float64,
+                        "priority": pl.Utf8,
+                    }
+                )

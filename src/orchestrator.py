@@ -9,6 +9,8 @@ from ingestion, through evaluation, to exportation.
 import polars as pl
 import logging
 
+MAX_SAFE_BATCH = 5_000_000
+
 # 1. Import the Interfaces (Abstract Base Classes)
 from src.interfaces import ITelemetryReader, IRulesEngine, IOutputWriter
 
@@ -45,30 +47,43 @@ def orchestrator(
     logger.info("AstraLog-HPC Orchestrator Started")
 
     # ---------------------------------------------------------
-    # SAFETY FIX 1: Prevent Out-Of-Memory (OOM) Crashes
+    # STRICT SAFETY VALIDATION (OOM & Alignment)
     # ---------------------------------------------------------
-    # Based on our benchmarking, 5,000,000 rows should be a safe upper limit for batch processing on a typical machine with 8GB RAM.
-    # This is a conservative cap to prevent users from accidentally crashing the system by requesting an excessively large batch size.
-    MAX_SAFE_BATCH = 5_000_000
+
+    if batch_size <= 0:
+        raise ValueError(f"batch_size must be strictly positive, got {batch_size}")
+        
+    if total_sensors <= 0:
+        raise ValueError(f"total_sensors must be strictly positive, got {total_sensors}. Check your config file.")
+        
+    if total_sensors > MAX_SAFE_BATCH:
+        raise ValueError(
+            f"CRITICAL: total_sensors ({total_sensors}) exceeds the RAM safety limit MAX_SAFE_BATCH ({MAX_SAFE_BATCH}). "
+            "Cannot process even a single timestamp without risking OOM."
+        )
+
+    # Max batch size cap to prevent OOM, with a warning to the user
     if batch_size > MAX_SAFE_BATCH:
         logger.warning(
-            f"Requested batch_size ({batch_size}) may exceeds RAM safety limits. Capping to {MAX_SAFE_BATCH}."
+            f"Requested batch_size ({batch_size}) exceeds RAM limits. Capping to {MAX_SAFE_BATCH}."
         )
         batch_size = MAX_SAFE_BATCH
 
-    # ---------------------------------------------------------
-    # SAFETY FIX 2: Ensure batch_size is a multiple of total sensors
-    # ---------------------------------------------------------
+    # Aline the batch to the sensors to avoid splitting timestamps
     safe_batch_size = (batch_size // total_sensors) * total_sensors
-
+    
     if safe_batch_size == 0:
-        safe_batch_size = total_sensors  # Ensure it's at least one full timestamp
+        raise ValueError(
+            f"Requested batch_size ({batch_size}) after capping is smaller than one full timestamp "
+            f"({total_sensors} sensors). Increase batch_size or reduce sensors."
+        )
 
     if safe_batch_size != batch_size:
-        logger.warning(
-            f"Requested batch_size ({batch_size}) splits timestamps. Auto-adjusting to safe multiple: {safe_batch_size}"
+        logger.warning( # <-- Cambia "info" in "warning"
+            f"Auto-adjusting batch_size from {batch_size} to safe multiple: {safe_batch_size}"
         )
-        batch_size = safe_batch_size
+        
+    batch_size = safe_batch_size
     # ---------------------------------------------------------
     logger.info(f"Configuration loaded -> Batch Size: {batch_size}")
 
