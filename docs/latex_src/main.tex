@@ -350,32 +350,39 @@ To illustrate the dynamic behavior of the system, two distinct execution paths a
 % ==========================================
 % 4. WORK DISTRIBUTION AND EFFORT
 % ==========================================
-\section{Work distribution and effort}
-
+\section{Work Distribution and Effort}
 \vspace{0.3cm}
 \noindent
-To ensure architectural consistency and high document quality, the team adopted a strict peer-review methodology. Neither section was developed in isolation. Both members actively cross-validated each other's work, suggested logic modifications, refined terminology, and collaboratively managed the AI prompting process to finalize the formatting and UML standards.
+The team adopted a collaborative peer-review methodology throughout the project. All deliverables were jointly validated: both members contributed to architectural decisions, domain terminology, and the iterative refinement of UML standards and document structure.
 
 \begin{table}[htbp]
     \centering
-    \renewcommand{\arraystretch}{1.5}
-    \begin{tabularx}{\textwidth}{@{} >{\raggedright\arraybackslash}p{4cm} X >{\centering\arraybackslash}p{3cm} @{}}
-        \toprule
-        \textbf{Team Member} & \textbf{Task Description} & \textbf{Effort (Hours)} \\
+    \renewcommand{\arraystretch}{1.6}
+    \begin{tabularx}{\textwidth}{@{} >{\raggedright\arraybackslash}p{4cm} X >{\centering\arraybackslash}p{2.5cm} @{}}
+                \toprule
+        \textbf{Team Member} & \textbf{Contribution} & \textbf{Effort (h)} \\
         \midrule
-        Domenico De Giorgio & \textbf{System Design, HPC Architecture \& DevOps Pipeline:} \newline
-        Drafted the architectural descriptions, defined component behaviors, and generated UML diagrams. Engineered the high-performance Polars-based Rules Engine. Designed the multi-cloud automated CI/CD infrastructure, integrating cross-platform API observability, Singularity \texttt{.sif} container generation, and SLURM workload orchestration with NVMe \texttt{\$WORK} optimization. & 90 \\
+        Domenico De Giorgio &
+        \textbf{Software Architect \& DevOps:}
+        Defined the system architecture and UML diagrams. Led the OOP implementation,
+        multi-threaded parallelization, and scalability profiling. Designed and
+        maintained the full CD pipeline and automated documentation infrastructure. & 90 \\
         \midrule
-        Leonardo Pelorosso & \textbf{Requirement Engineering, QA \& Virtualization:} \newline
-        Identified system actors, functional/non-functional constraints, and detailed Use Case scenarios. Established reproducible Docker and DevContainer environments. Developed the rigorous \texttt{pytest} framework, managed CodeQL security scanning, and validated the mathematical constraints of the operational telemetry logic. & 90 \\
+        Leonardo Pelorosso &
+        \textbf{Requirements \& Quality Assurance Engineer:}
+        Conducted requirements elicitation and domain assumption analysis. Contributed
+        to the OOP implementation. Developed the \texttt{pytest} suite, CI testing
+        pipeline, and Docker and Singularity containerization. & 90 \\
         \midrule
-        Domenico De Giorgio \& \newline Leonardo Pelorosso & \textbf{Peer Review, Benchmarking \& AI Integration:} \newline
-        Cross-validated architectural logic, refined domain terminology, and co-managed AI prompting for code optimization and quality compliance. Conducted system benchmarking and analyzed software scaling/performance on the Galileo100 SLURM platform. & 20 \par (10 hours each) \\
+        Both Members &
+        \textbf{Integration, Benchmarking \& Review:}
+        Cross-validated architectural decisions, conducted system benchmarking,
+        and analysed performance on the Galileo100 SLURM platform. & 20 \\
         \midrule
-        & \multicolumn{1}{r}{\textbf{Total Project Effort}} & \textbf{200} \\
+        & \multicolumn{1}{r}{\textbf{Total}} & \textbf{200} \\
         \bottomrule
     \end{tabularx}
-    \caption{Work distribution among team members and hours allocated per task.}
+    \caption{Work distribution and effort allocation per team member.}
     \label{tab:work_distribution}
 \end{table}
 
@@ -468,7 +475,7 @@ interactions were structured as follows:
 
     \item \textbf{Data Structures Trade-off and Bottleneck Profiling}
     \begin{itemize}[label={}, leftmargin=0.5cm]
-        \item \textbf{Tool Used:} Gemini Advanced
+        \item \textbf{Tool Used:} Gemini 3.1 Pro
         \item \textbf{Prompt Concept:} "How can I transport our original Pandas implementation to Polars to avoid $O(N^2)$ memory-copying bottlenecks and utilize the Rust Rayon multi-threaded engine?"
         \item \textbf{AI Output:} Code examples and profiling strategies demonstrating how to replace row-by-row Pandas evaluation with vectorized Polars Eager API queries, utilizing boolean masking and native C/Rust functions.
         \item \textbf{Integration:} Directly integrated into \texttt{rules\_engine.py} to achieve maximum throughput ($\sim$850,000 rows/second), bypassing the Python Global Interpreter Lock (GIL).
@@ -477,7 +484,7 @@ interactions were structured as follows:
 
     \item \textbf{Containerization Concepts (Docker to Singularity)}
     \begin{itemize}[label={}, leftmargin=0.5cm]
-        \item \textbf{Tool Used:} Gemini Advanced
+        \item \textbf{Tool Used:} Gemini 3.1 Pro
         \item \textbf{Prompt Concept:} "I need to understand how to convert our local Docker configuration into a format compatible with the HPC cluster's Singularity/Apptainer requirements."
         \item \textbf{AI Output:} Explained the architectural differences between Docker (root daemon) and Singularity (user-space), and how to leverage GitHub Container Registry as a bridge to pull \texttt{.sif} files directly.
         \item \textbf{Integration:} Formed the basis of our two-stage containerization strategy, safely bypassing CINECA's unprivileged CI runner limitations.
@@ -486,7 +493,7 @@ interactions were structured as follows:
 
     \item \textbf{CI/CD Pipeline and Cross-Platform Automation}
     \begin{itemize}[label={}, leftmargin=0.5cm]
-        \item \textbf{Tool Used:} Gemini Advanced
+        \item \textbf{Tool Used:} Gemini 3.1 Pro
         \item \textbf{Prompt Concept:} "Formulate the CI/CD pipeline syntax for GitHub Actions and GitLab CI to automatically build a Docker container, push it to GHCR, mirror the repo, and convert it to a Singularity .sif file."
         \item \textbf{AI Output:} The YAML configuration files for GitHub Actions, including the necessary token authentication, CodeQL semantic analysis, and automated artifact uploads on failure.
         \item \textbf{Integration:} Applied to our \texttt{.github/workflows/cicd.yml} file, resulting in a zero-touch, enterprise-grade automated deployment pipeline.
@@ -495,7 +502,7 @@ interactions were structured as follows:
 
     \item \textbf{Cross-Platform CI/CD Observability (API Polling)}
     \begin{itemize}[label={}, leftmargin=0.5cm]
-        \item \textbf{Tool Used:} Gemini Advanced
+        \item \textbf{Tool Used:} Gemini 3.1 Pro
         \item \textbf{Prompt Concept:} "Is there a way to add a step to the GitHub pipeline to check if the GitLab CINECA runners were successful in building the .sif container?"
         \item \textbf{AI Output:} A bash script utilizing the GitLab REST API and \texttt{curl} to continuously poll the CINECA pipeline status, complete with error handling and secure secret injection.
         \item \textbf{Integration:} Added to the \texttt{mirror-to-gitlab} job, creating a fully observable multi-cloud deployment loop that automatically fails the GitHub Action if the HPC containerization process crashes.
@@ -504,7 +511,7 @@ interactions were structured as follows:
 
     \item \textbf{SLURM Job Script Optimization}
     \begin{itemize}[label={}, leftmargin=0.5cm]
-        \item \textbf{Tool Used:} Gemini Advanced
+        \item \textbf{Tool Used:} Gemini 3.1 Pro
         \item \textbf{Prompt Concept:} "How can I configure SLURM scripts on Galileo100 to avoid NFS login-node throttling when running high I/O Singularity containers?"
         \item \textbf{AI Output:} Suggested mapping container I/O directly to the high-speed NVMe cluster scratch space (\texttt{\$WORK}) before execution.
         \item \textbf{Integration:} Implemented in \texttt{job.sh} and \texttt{submit.sh}, ensuring our batch processing scaling remained near-linear without being bottlenecked by the network drive.
@@ -513,10 +520,45 @@ interactions were structured as follows:
 
     \item \textbf{Automated API Documentation}
     \begin{itemize}[label={}, leftmargin=0.5cm]
-        \item \textbf{Tool Used:} GitHub Copilot \& Gemini Advanced
+        \item \textbf{Tool Used:} GitHub Copilot \& Gemini 3.1 Pro
         \item \textbf{Prompt Concept:} "Generate pdocs compatible docstrings for this Python class, and explain how to autonomously deploy the generated HTML to GitHub pages via Actions."
         \item \textbf{AI Output:} Formatted Python docstrings and the specific \texttt{pdoc} CLI commands for static HTML generation within the CI pipeline.
         \item \textbf{Integration:} Added to all source code files and the CI/CD pipeline, autonomously maintaining the live AstraLog Control documentation hub.
+    \end{itemize}
+
+    \item \textbf{Automated Test Coverage Reporting}
+    \begin{itemize}[label={}, leftmargin=0.5cm]
+        \item \textbf{Tool Used:} Gemini 3.1 Pro
+        \item \textbf{Prompt Concept:} "How can I integrate pytest-cov and Codecov into my GitHub Actions pipeline to automate test coverage reporting and visualize it with a dynamic badge?"
+        \item \textbf{AI Output:} Provided the CI YAML steps to generate JUnit XML reports, upload them to Codecov using the v4 action, and the markdown syntax for the dynamic repository badge.
+        \item \textbf{Integration:} Integrated into the CI pipeline and README, providing immediate, verifiable proof of the 93\% test coverage standard directly within the documentation.
+    \end{itemize}
+    \vspace{0.3cm}
+
+    \item \textbf{Advanced Docker Build Optimization and Validation}
+    \begin{itemize}[label={}, leftmargin=0.5cm]
+        \item \textbf{Tool Used:} Gemini 3.1 Pro
+        \item \textbf{Prompt Concept:} "How can I speed up Docker builds in GitHub Actions, and how can I test the final production GHCR container dynamically without baking tests into the production image?"
+        \item \textbf{AI Output:} Suggested using Docker Layer Caching (\texttt{type=gha}) and provided the command to spin up the container while dynamically volume-mounting the test suite into it.
+        \item \textbf{Integration:} Drastically reduced pipeline execution time and established a bulletproof Artifact Validation step, ensuring the production container is fully operational before cluster deployment.
+    \end{itemize}
+    \vspace{0.3cm}
+
+    \item \textbf{Semantic Versioning and Python Synchronization}
+    \begin{itemize}[label={}, leftmargin=0.5cm]
+        \item \textbf{Tool Used:} Gemini 3.1 Pro
+        \item \textbf{Prompt Concept:} "How do I configure Semantic Release for a Python project to bypass Node.js errors, and how can I make it automatically sync the new version number inside my \texttt{src/\_\_init\_\_.py} file?"
+        \item \textbf{AI Output:} Supplied the \texttt{.releaserc.json} configuration overriding default npm plugins, and provided the \texttt{exec} and \texttt{git} plugin logic to use \texttt{sed} for automatic version bumping.
+        \item \textbf{Integration:} Created a fully autonomous release cycle that ensures the source code, Git tags, and documentation always share a Single Source of Truth (SSOT).
+    \end{itemize}
+    \vspace{0.3cm}
+
+    \item \textbf{Autonomous LaTeX Compilation and Dual-Deployment}
+    \begin{itemize}[label={}, leftmargin=0.5cm]
+        \item \textbf{Tool Used:} Gemini 3.1 Pro
+        \item \textbf{Prompt Concept:} "Is there a way to make GitHub Actions automatically compile a .pdf from a LaTeX source code and deploy it alongside my HTML documentation on GitHub Pages?"
+        \item \textbf{AI Output:} Provided the YAML syntax utilizing the \texttt{xu-cheng/latex-action} container and the shell commands to orchestrate the dual-deployment of both the PDF and HTML sites.
+        \item \textbf{Integration:} Eliminated manual PDF compilation, ensuring the live Phase 1 Design Document is permanently synchronized with the active codebase.
     \end{itemize}
 
 \end{enumerate}

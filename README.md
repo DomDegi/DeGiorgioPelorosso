@@ -25,7 +25,7 @@ Here you can access the official documentation hub and web interface for the **A
 
 | Name Surname | Person Code | Role / Main Focus | Effort (Hours) |
 | :--- | :--- | :--- | :--- |
-| **Domenico De Giorgio** | 10854350 | **Software Architect & DevOps:** System Architecture (UML), OOP Implementation, Multi-threaded Parallelization & Profiling, Scalability Analysis, CD Pipelines, Automated `pdoc` | 100h |
+| **Domenico De Giorgio** | 10854350 | **Software Architect & DevOps:** System Architecture (UML), OOP Implementation, Multi-threaded Parallelization & Profiling, Scalability Analysis, CD Pipelines, Automated documentation infrastructure | 100h |
 | **Leonardo Pelorosso** | 10779110 | **Requirements & Quality Assurance Engineer:** Requirements Elicitation & Domain Assumptions, OOP Implementation, Core `pytest` Suite, CI Testing Pipeline, Docker & Singularity Containerization | 100h |
 
 ---
@@ -121,6 +121,7 @@ This interface-driven design allowed us to cleanly separate the physical data ha
 **1. Batch Size Auto-Alignment:** The `batch_size`, given as a CLI argument, gets automatically sanitized and adjusted to the nearest multiple of the number of active sensors in the configuration. This ensures that a single timestamp is never mathematically split across two different evaluation batches.
 **2. Fault Tolerance (Malformed Data):** As explicitly validated by the course professor via email correspondence, a single corrupted or malformed sensor reading does not invalidate concurrent data at the same timestamp. Instead of flagging the entire timestamp, the system isolates and drops the corrupted row, safely evaluating the surviving sensor measurements for that timestamp to maximize data retention.
 **3. Batch Accumulation in RAM:** The project guidelines initially specified accumulating valid packets into a "local batch file" before applying the rules. To maximize HPC performance and avoid severe disk I/O bottlenecks, we varied this requirement by accumulating the batches directly in memory (RAM) using Polars DataFrames. Disk writing is strictly deferred to the final output phase for `valid_data.csv` and `alarms.log`.
+**4. Output Sorting:** To guarantee fully reproducible and deterministic results, we introduced explicit multi-key sorting on the final alarm output at the cost of a marginal performance overhead. Alarms are sorted in ascending order by TIMESTAMP, then descending by PRIORITY (HIGH → MEDIUM → LOW), then ascending by RULE_ID, and finally ascending by SENSOR_ID. This fixed ordering ensures that two identical input streams always produce byte-identical output files, regardless of Polars' internal parallel execution order.
 
 ### Distribution and parallelization approach
 *(Note: As a group of two students, we utilized the CSV track. However, our pipeline is heavily parallelized for HPC environments).*
@@ -143,6 +144,10 @@ AI assistants (Gemini) were used primarily as a technical consultant to:
 - Configure SLURM scripts to avoid NFS login-node throttling by mapping container I/O directly to high-speed NVMe cluster scratch space (`$WORK`).
 - Generate pdocs comments for all the src code and, after reviewing and making the needed adjustments, add them to the code.
 - Implement the autonomous generation and deployment of the pdocs to our GitHub pages.
+- Integrate `pytest-cov` and Codecov to automate test coverage reporting and visualization.
+- Optimize Docker build times using GitHub Actions caching (`type=gha`) and implement dynamic volume-mounting to securely test the production GHCR container directly in the cloud.
+- Configure Semantic Release.
+- Automate the cloud-based compilation of the Phase 1 LaTeX Design Document (`.tex` to `.pdf`) and orchestrate its dual-deployment alongside the HTML API documentation to GitHub Pages.
 
 ---
 
