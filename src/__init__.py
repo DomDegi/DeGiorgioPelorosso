@@ -64,6 +64,8 @@ protections, safe chunk alignment, and mathematical correlation logic.
 -> **[Click here to view the Automated Test Suite Documentation](tests.html)**
 
 ---
+
+*Version: 1.1.1*
 *Developed for the Software Engineering for HPC course (A.Y. 2025-2026).*
 """
 

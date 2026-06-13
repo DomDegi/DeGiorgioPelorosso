@@ -6,7 +6,8 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "sed -i 's/__version__ = .*/__version__ = \"${nextRelease.version}\"/' src/__init__.py && sed -i 's/\\(\\\\textbf{Version:}\\) [0-9]\\+\\.[0-9]\\+\\.[0-9]\\+/\\1 ${nextRelease.version}/' docs/latex_src/main.tex"      }
+        "prepareCmd": "sed -i 's/__version__ = .*/__version__ = \"${nextRelease.version}\"/' src/__init__.py && sed -i 's/\\*Version: [^ ]*/\\*Version: ${nextRelease.version}/' src/__init__.py && sed -i 's/\\(\\\\textbf{Version:}\\) [^ ]*/\\1 ${nextRelease.version}/' docs/latex_src/main.tex"
+      }
     ],
     [
       "@semantic-release/git",
