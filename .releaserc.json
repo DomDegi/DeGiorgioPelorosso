@@ -13,7 +13,7 @@
       "@semantic-release/git",
       {
         "assets": ["src/__init__.py", "docs/latex_src/main.tex"],
-        "message": "chore(release): sync version to ${nextRelease.version} [skip ci]"
+        "message": "chore(release): sync version to ${nextRelease.version}"
       }
     ],
     "@semantic-release/github"
