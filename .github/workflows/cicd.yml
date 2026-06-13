@@ -221,6 +221,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0 # Semantic Release needs full history to calculate versions
+          persist-credentials: false # We will use a custom token
 
       - name: Semantic Release
         uses: cycjimmy/semantic-release-action@v4
@@ -229,4 +230,4 @@ jobs:
             @semantic-release/exec
             @semantic-release/git
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}  # If we use a normal token, the docs.yml workflow won't trigger.

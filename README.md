@@ -188,6 +188,7 @@ To enable the automated cross-platform deployment, the following Repository Secr
 * `GITLAB_USERNAME`: Your CINECA institutional username.
 * `CINECA_GITLAB_TOKEN`: A Personal Access Token generated on CINECA's GitLab instance. **Required Scopes:** `read_api`, `read_repository`, and `write_repository`.
 * `CODECOV_TOKEN`: The repository upload token from Codecov.io, required to publish the automated test coverage reports.
+* `RELEASE_TOKEN`: Custom token used by Semantic Release to trigger the docs.yml workflow when moving to a new version.
 * *Note:* GitHub automatically injects the standard `GITHUB_TOKEN` required to build and push to the GitHub Container Registry (GHCR), so no manual configuration is needed for the Docker build phase.
 
 ---
