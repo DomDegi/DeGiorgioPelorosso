@@ -14,4 +14,4 @@ repos:
       - id: trailing-whitespace      # Trims invisible spaces at the end of lines
       - id: end-of-file-fixer        # Ensures files end with a single blank line
       - id: check-yaml               # Validates your YAML syntax
-      - id: check-added-large-files  # Prevents accidentally committing giant CSVs!
+      - id: check-added-large-files  # Prevents accidentally committing giant CSVs

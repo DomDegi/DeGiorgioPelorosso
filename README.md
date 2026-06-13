@@ -61,6 +61,42 @@ Here you can access the official documentation hub and web interface for the **A
 
 ---
 
+## Local Development & Contribution
+
+### 1A. VS Code DevContainer (Recommended)
+This repository includes a fully configured VS Code DevContainer to guarantee environment consistency.
+1. Install the **Dev Containers** extension in Visual Studio Code.
+2. Open the command palette (`Ctrl+Shift+P` or `Cmd+Shift+P`) and select **Dev Containers: Reopen in Container**.
+3. The editor will automatically build the Docker environment, mount the workspace, and install all dependencies.
+
+### 1B. Pure Docker CLI (Without VS Code)
+If you prefer to use standard Docker commands without relying on VS Code or any DevContainer tools, you can build and run the development environment manually.
+
+**Build the development image:**
+From the root of the repository, point Docker to the development Dockerfile:
+```bash
+docker build -t astralog-dev -f .devcontainer/Dockerfile .
+```
+
+**Run the container interactively:**
+Spin up the container, mount your current directory (`$PWD`) into the container's workspace, and open a bash shell. This ensures any code you edit locally is immediately reflected inside the container:
+```bash
+docker run -it --rm -v "$PWD":/workspace -w /workspace astralog-dev bash
+```
+Once inside, you will have a fully isolated environment with all dependencies installed.
+
+### 2. Initializing Pre-commit Hooks
+To maintain code quality and strict formatting, we enforce `pre-commit` hooks. Before you make your first commit, you must initialize the hooks in your local `.git` directory:
+
+```bash
+# 1. Ensure you have the dev requirements installed (if running locally outside Docker)
+pip install -r requirements_dev.txt
+
+# 2. Install the git hooks
+pre-commit install
+```
+Once installed, tools like `black` (formatting) and `ruff` (linting) will automatically intercept and check your code every time you run `git commit`. If a formatting error is found, the commit will be blocked locally, the file will be auto-formatted, and you will simply need to stage the file (`git add`) and commit again.
+
 ## Software Organization & Architecture
 
 ### Language and Libraries
