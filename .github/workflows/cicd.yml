@@ -246,4 +246,6 @@ jobs:
             @semantic-release/exec
             @semantic-release/git
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Automatically provided by GitHub
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }} # Custom token with repo permissions
+                                                     # If using the default GITHUB_TOKEN, the release commit won't trigger the docs.yml workflow,
+                                                     # so docs won't update with the new version number until the next release.
