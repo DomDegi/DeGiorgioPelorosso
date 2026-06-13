@@ -1,5 +1,6 @@
 stages:
   - build_container
+  - test_artifact
   - publish
 
 build_apptainer:
@@ -16,7 +17,6 @@ build_apptainer:
   script:
     - echo "Pulling Docker image from GHCR and converting to Singularity .sif..."
     - mkdir -p build
-
     # We use 'pull' directly on the GHCR docker image instead of 'build' with a .def file
     # This automatically converts the Docker layers into a flat Singularity image
     - apptainer pull --force build/astralog-hpc.sif docker://ghcr.io/domdegi/astralog-hpc:latest
@@ -24,6 +24,24 @@ build_apptainer:
     paths:
       - build/astralog-hpc.sif
     expire_in: 1 hour
+
+test_sif:
+  stage: test_artifact
+  image:
+    name: kaczmarj/apptainer
+    entrypoint: [""]
+  tags:
+    - x86_64
+    - cpu
+    - docker
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  dependencies:
+    - build_apptainer
+  script:
+    - echo "Validating the built Apptainer artifact..."
+    # Executes the pytest suite strictly inside the read-only .sif container
+    - apptainer exec build/astralog-hpc.sif python -m pytest tests/
 
 publish_sif:
   stage: publish
@@ -36,6 +54,7 @@ publish_sif:
     - if: '$CI_COMMIT_BRANCH == "main"'
   dependencies:
     - build_apptainer
+    - test_sif # Ensures we ONLY publish if the tests inside the container pass!
   script:
     - echo "Uploading .sif file to GitLab Package Registry..."
     - VERSION="${CI_COMMIT_SHORT_SHA}"
