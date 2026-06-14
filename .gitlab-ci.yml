@@ -27,7 +27,7 @@ build_apptainer:
 
 publish_sif:
   stage: publish
-  image: curlimages/curl:latest
+  image: alpine:latest
   tags:
     - x86_64
     - cpu
@@ -36,11 +36,35 @@ publish_sif:
     - if: '$CI_COMMIT_BRANCH == "main"'
   dependencies:
     - build_apptainer
+  before_script:
+    # Install curl and jq (required for JSON parsing) since Alpine doesn't have them by default
+    - apk add --no-cache curl jq
   script:
+    - echo "Cleaning up old packages to free up quota..."
+    - |
+      # Fetch all packages named 'astralog-sif' sorted by creation date (newest first)
+      curl --silent --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages?package_name=astralog-sif&order_by=created_at&sort=desc" > packages.json
+
+      # Extract package IDs, ignore the 'latest' tag, and skip the first 3 (which we want to keep)
+      IDS_TO_DELETE=$(jq -r '.[] | select(.version != "latest") | .id' packages.json | tail -n +4)
+
+      if [ -z "$IDS_TO_DELETE" ]; then
+        echo "No old packages found to delete. Proceeding..."
+      else
+        for ID in $IDS_TO_DELETE; do
+          echo "Deleting old package ID: $ID..."
+          curl --request DELETE --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+               "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/$ID"
+        done
+        echo "Cleanup complete."
+      fi
+
     - echo "Uploading .sif file to GitLab Package Registry..."
     - VERSION="${CI_COMMIT_SHORT_SHA}"
 
     - test -s build/astralog-hpc.sif || (echo "ERROR: .sif is empty or missing" && exit 1)
+
     # Uploads the specific commit version
     - |
       curl --fail \
@@ -49,6 +73,7 @@ publish_sif:
            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/astralog-sif/${VERSION}/astralog-hpc.sif"
 
     - echo "Updating the 'latest' tag..."
+
     # Uploads the 'latest' version to easily overwrite the old one
     - |
       curl --fail \
