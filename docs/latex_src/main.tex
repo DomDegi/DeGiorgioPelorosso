@@ -50,7 +50,7 @@
 
     \vfill
 
-    {\large \textbf{Version:} 1.5.0 \par}
+    {\large \textbf{Version:} 1.0 \par}
     {\large \textbf{Release Date:} \today \par}
     {\large \textbf{Academic Year:} 2025-2026 \par}
 \end{titlepage}
@@ -111,7 +111,7 @@ The ultimate success of the project lies in providing a robust, scalable archite
 \subsubsection{Overview and Diagram}
 The AstraLog-HPC system is designed to operate autonomously within an HPC environment, interacting with telemetry streams and configuration files. The following use cases describe the functional scope of the system.
 
-% Placeholder for the diagram
+% Placeholder per il diagramma
 \begin{figure}[h]
     \centering
     \includegraphics[width=1\textwidth]{diagrams/use_case_diagram.pdf}
@@ -640,6 +640,15 @@ interactions were structured as follows:
         \item \textbf{AI Output:} Provided the YAML syntax utilizing the \texttt{xu-cheng/latex-action} container and the shell commands to orchestrate the dual-deployment of both the PDF and HTML sites.
         \item \textbf{Integration:} Eliminated manual PDF compilation, ensuring the live Phase 1 Design Document is permanently synchronized with the active codebase.
     \end{itemize}
+
+    \item \textbf{RASD Gap Analysis and Documentation Review}
+    \begin{itemize}[label={}, leftmargin=0.5cm]
+        \item \textbf{Tool Used:} Claude Sonnet 4.6
+        \item \textbf{Prompt Concept:} "Cross-reference the submitted RASD against the original assignment specification and identify structural gaps, inconsistencies, or missing elements that could affect the evaluation."
+        \item \textbf{AI Output:} Identified a set of discrepancies between the document and the assignment requirements, including a missing \texttt{logic} field in the correlation rule format of CR-2, an inconsistency between the version number in the compiled PDF and the LaTeX source, and a mismatch in the effort hours between the two documents. It also flagged that FR-5 had been reformulated to implicitly reflect an implementation deviation that should instead be documented only in the Design section.
+        \item \textbf{Integration:} Each finding was individually evaluated by the team. Confirmed issues were corrected directly in the LaTeX source: the \texttt{logic} field was added to the CR-2 correlation schema, version and effort figures were aligned, and FR-5 was restored to match the original assignment wording. The in-memory buffering deviation was retained exclusively in Section 3.3 as a documented design decision. Additionally, the tool was used to generate draft content for the UC-4 detailed table restructuring and the README Testing \& Rationale section, both of which were reviewed and adjusted before integration.
+    \end{itemize}
+    \vspace{0.3cm}
 
 \end{enumerate}
 
