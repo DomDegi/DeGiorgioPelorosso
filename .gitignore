@@ -40,5 +40,6 @@ docs/pdocs/
 # Other ignores
 PROMPT*.md
 
-# Leonardo's Mac specific ignores
-.devcontainer/docker-compose.override.yml
+# Recap file
+src_recap.txt
+test_recap.txt
