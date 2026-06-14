@@ -13,7 +13,7 @@ import pytest
 from src.orchestrator import orchestrator
 
 
-def test_batch_auto_alignment(caplog):
+def test_batch_auto_alignment(caplog: pytest.LogCaptureFixture):
     """
     EDGE CASE: The user asks for a batch_size of 10, but there are 3 sensors.
     10 / 3 = 3.33 (Timestamp split!). The orchestrator MUST auto-adjust
@@ -43,7 +43,7 @@ def test_batch_auto_alignment(caplog):
     mock_reader.extract_batch.assert_called_once_with(9)
 
 
-def test_oom_protection_and_alignment(caplog):
+def test_oom_protection_and_alignment(caplog: pytest.LogCaptureFixture):
     """
     EDGE CASE: The user asks for a massive batch_size of 10,000,000.
     The orchestrator MUST cap this to MAX_SAFE_BATCH (5,000,000) to prevent RAM crashes,
@@ -72,11 +72,12 @@ def test_oom_protection_and_alignment(caplog):
     # Safe Multiple = (5,000,000 // 3) * 3 = 4,999,998
     mock_reader.extract_batch.assert_called_once_with(4_999_998)
 
-    def test_orchestrator_raises_value_error():
-        """
-        EDGE CASE: The user asks for an invalid batch size (e.g., 0 or negative).
-        The orchestrator MUST immediately raise a ValueError to prevent a crash.
-        """
+
+def test_orchestrator_raises_value_error():
+    """
+    EDGE CASE: The user asks for an invalid batch size (e.g., 0 or negative).
+    The orchestrator MUST immediately raise a ValueError to prevent a crash.
+    """
 
     mock_reader = MagicMock()
     mock_engine = MagicMock()

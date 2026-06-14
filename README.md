@@ -153,15 +153,134 @@ AI assistants (Gemini) were used primarily as a technical consultant to:
 
 ## Testing & Rationale
 
-We implemented our test suite using `pytest`. The tests are designed to run automatically during the CI/CD pipeline to ensure code integrity before building the container.
+We implemented our test suite using `pytest`, organized into **7 test modules**
+covering unit, integration, and end-to-end regression scenarios. The suite runs
+automatically in the CI/CD pipeline on every push to `main`.
 
-- **Isolation via Interfaces:** Because our architecture relies on interfaces, we were able to write unit tests for the `RulesEngine` without needing actual CSV files or I/O operations. We mocked the `IStateMemory` and passed raw DataFrames directly into the engine to verify edge cases (e.g., streak continuity across batches, complex AND/OR correlations).
-- **Sanitization Testing:** Tests ensure the `CSVTelemetryReader` correctly identifies and drops malformed data according to Polars' strict schema checking without crashing the pipeline.
-- **Snapshots:** End-to-end regression tests verify that the output strings exactly match legacy baseline outputs regardless of internal hardware threading order.
+### Design Philosophy
 
-To run the tests locally:
+**Isolation via Dependency Injection:** The `Orchestrator` and `RulesEngine` rely
+entirely on Abstract Base Classes (`interfaces.py`). This allowed us to inject
+`MagicMock` objects and raw `pl.DataFrame`s directly into components, completely
+bypassing file I/O and testing pure logic in isolation.
+
+**Component-level vs. End-to-End:** Unit tests verify individual mathematical
+behaviors (e.g., does a streak of exactly N-1 breaches *not* trigger an alarm?).
+End-to-end tests verify that the fully-assembled pipeline produces byte-identical
+output against a fixed Golden Master baseline.
+
+---
+
+### Test Modules & Case Rationale
+
+**`test_memory.py` — State Memory (7 tests)**
+
+Verifies the `DictStateMemory` component in isolation.
+
+| Test | Rationale |
+|---|---|
+| `test_initial_count_is_zero` | Cold-start safety: missing key must return `0`, not raise `KeyError` |
+| `test_set_and_get_consecutive_count` | Basic read/write correctness for stateful streaks |
+| `test_count_namespace_isolation` | **Critical:** two rules monitoring the same sensor must not overwrite each other's streak counter (key = `rule_id + sensor_id`) |
+| `test_count_overwrite_updates_value` | A new batch must correctly replace the streak from the previous batch |
+| `test_initial_value_is_none` | Cold-start safety for Step rules: missing key must return `None`, not `0.0`, so the engine can distinguish "no prior batch" from "last value was zero" |
+| `test_set_and_get_last_value` | Basic read/write correctness for step-difference values |
+| `test_value_overwrite_updates_correctly` | Verifies float values are updated across batch boundaries |
+
+---
+
+**`test_reader.py` — CSV Telemetry Reader (2 tests)**
+
+Verifies sanitization logic without touching the filesystem (instantiated via
+`__new__` to bypass `__init__`).
+
+| Test | Rationale |
+|---|---|
+| `test_sanitize_batch_drops_corrupted_rows` | Verifies all three corruption categories (malformed timestamp, null `sensor_id`, non-numeric `value`, invalid `priority`) are dropped in a single pass, while valid rows survive |
+| `test_sanitize_batch_handles_missing_columns` | Verifies that a batch missing the optional `priority` column is not rejected — the column is created and defaulted to `LOW` |
+
+---
+
+**`test_writer.py` — CSV Output Writer (4 tests)**
+
+| Test | Rationale |
+|---|---|
+| `test_writer_clean_start` | **Idempotency:** a stale `valid_data.csv` from a previous crashed run must be deleted, not appended to |
+| `test_write_valid_batch_determinism` | **CI/CD critical:** sensors must be sorted alphabetically before writing, guaranteeing byte-identical output regardless of Polars' internal parallel execution order |
+| `test_write_alarms_missing_columns` | Verifies graceful failure — a malformed alarm DataFrame logs an error and does not write partial data to disk |
+| `test_empty_dataframe_handling` | Passing empty DataFrames must be a no-op; no files should be created |
+
+---
+
+**`test_orchestrator.py` — Orchestrator Safety (3 tests)**
+
+All three tests use `MagicMock` to inject fake components, testing only the
+mathematical safety constraints of the orchestrator loop.
+
+| Test | Rationale |
+|---|---|
+| `test_batch_auto_alignment` | `batch_size=10` with 3 sensors → must auto-adjust to `9` (nearest safe multiple) to prevent timestamp splitting across batches |
+| `test_oom_protection_and_alignment` | `batch_size=10_000_000` → must cap to `MAX_SAFE_BATCH=5_000_000`, then align to `4_999_998` (nearest multiple of 3 sensors) |
+| `test_orchestrator_raises_value_error` | `batch_size=0` → must raise `ValueError` immediately rather than entering an infinite loop |
+
+---
+
+**`test_rules_engine.py` — Rules Engine (9 tests)**
+
+The most extensive module. The `engine` fixture patches `_load_rules` to inject
+rules directly, avoiding filesystem access.
+
+| Test | Rationale |
+|---|---|
+| `test_evaluate_simple_rule` | Baseline: threshold fires on the correct row only; a different sensor at the same timestamp is not affected |
+| `test_evaluate_step_rule_with_memory_bridge` | **Cross-batch continuity:** the first row's delta is computed against the value stored in `IStateMemory` from the previous batch, not against `0.0` |
+| `test_evaluate_stateful_rule_exact_trigger` | **Off-by-one guard:** with `consecutive_measurements=3`, the alarm fires exactly on row 4 (T4), not on rows T2 or T3 |
+| `test_correlation_rule_logic_and` | AND logic fires only when **all** conditions are simultaneously true at the same timestamp; T2 where only one condition holds must not trigger |
+| `test_correlation_rule_logic_or` | OR logic fires when **at least one** condition is met; verifies that a pre-injected streak via `IStateMemory` correctly feeds the correlation |
+| `test_missing_sensor_guard_clause` | A rule targeting a sensor absent from the batch must produce zero alarms and leave valid data intact |
+| `test_priority_sorting` | Output alarms must be ordered `HIGH → MEDIUM → LOW` regardless of rule definition order in `rules.json` |
+| `test_invalid_operator_guard` | An unsupported operator (e.g., `MAGIC_OPERATOR`) must not crash the engine; it must return zero alarms |
+| `test_correlation_rule_n_arguments_and` | **N-argument AND (3 conditions):** verifies correct timestamp intersection and that the output `sensor_id` and `value` fields concatenate all N parent sensors in order |
+| `test_correlation_rule_n_arguments_or` | **N-argument OR (3 conditions):** verifies that a missing sensor in the batch produces `NaN` in the concatenated value string rather than crashing |
+
+---
+
+**`test_general.py` — End-to-End Integration (1 test)**
+
+Builds the entire composition root from scratch using `tmp_path` (isolated
+temporary filesystem). Writes real YAML, JSON, and CSV files, runs the full
+orchestrator, and asserts exact string formatting of both output files.
+
+| Test | Rationale |
+|---|---|
+| `test_e2e_orchestrator_processing` | Verifies that a `simple` rule alarm and a nominal timestamp are formatted byte-accurately against the ESA-specified output format (`TIMESTAMP;RULE_ID;PRIORITY;SENSOR;VALUE` and `TIMESTAMP;NOMINAL;S:V\|S:V`) |
+
+---
+
+**`test_snapshot1.py` / `test_snapshot2.py` — Golden Master Regression (2 tests)**
+
+Two end-to-end regression tests that run the full pipeline via `main()` using
+real fixture files (`test_rules.json`, `test_input.csv`) and compare the output
+line-by-line against pre-approved Golden Master baselines stored in
+`tests/fixtures/`.
+
+The first run auto-generates the baseline if missing; subsequent runs detect any
+output drift. Lines are sorted before comparison to remain robust against Polars'
+internal parallel execution order.
+
+These tests are the final safety net before container deployment: if the
+Golden Master comparison fails in CI, the Docker build is blocked.
+
+---
+
+To run the full suite locally:
 ```bash
 pytest
+```
+
+To run with coverage:
+```bash
+pytest --cov=src --cov-report=term-missing
 ```
 ---
 
