@@ -99,6 +99,8 @@ pre-commit install
 ```
 Once installed, tools like `black` (formatting) and `ruff` (linting) will automatically intercept and check your code every time you run `git commit`. If a formatting error is found, the commit will be blocked locally, the file will be auto-formatted, and you will simply need to stage the file (`git add`) and commit again.
 
+---
+
 ## Software Organization & Architecture
 
 ### Language and Libraries
@@ -133,21 +135,6 @@ By chunking the CSV into batches, we effectively feed the Polars Rayon thread po
 Extensive scalability testing was conducted to determine the optimal batch sizes for different hardware environments, yielding **near-linear scalability** across available cores:
 - **Local Environment (DeGiorgio CPU):** The optimal throughput was achieved with a batch size of **750,000 rows**, balancing local RAM constraints with CPU thread saturation.
 - **HPC Environment (Galileo100):** Due to the massive 32-core architecture and high-speed memory layout, the optimal batch size shifted to **200,000 rows**. This tighter batching prevents L3-cache misses and ensures continuous, high-speed thread feeding on the compute nodes.
-
-### Usage of AI
-AI assistants (Gemini) were used primarily as a technical consultant to:
-- General debug.
-- Understand and debug containerization concepts (Docker to Singularity conversion).
-- Transport our original Pandas implementation to Polars.
-- Formulate the CI/CD pipeline syntax for GitHub Actions and GitLab CI.
-- Profile C-level execution times to identify and eliminate $O(N^2)$ memory-copying bottlenecks during the Pandas-to-Polars migration.
-- Configure SLURM scripts to avoid NFS login-node throttling by mapping container I/O directly to high-speed NVMe cluster scratch space (`$WORK`).
-- Generate pdocs comments for all the src code and, after reviewing and making the needed adjustments, add them to the code.
-- Implement the autonomous generation and deployment of the pdocs to our GitHub pages.
-- Integrate `pytest-cov` and Codecov to automate test coverage reporting and visualization.
-- Optimize Docker build times using GitHub Actions caching (`type=gha`) and implement dynamic volume-mounting to securely test the production GHCR container directly in the cloud.
-- Configure Semantic Release.
-- Automate the cloud-based compilation of the Phase 1 LaTeX Design Document (`.tex` to `.pdf`) and orchestrate its dual-deployment alongside the HTML API documentation to GitHub Pages.
 
 ---
 
@@ -351,15 +338,121 @@ scp -o StrictHostKeyChecking=no -r <your_username>@login.g100.cineca.it:~/astral
 
 ---
 
-## Technical Challenges & Architectural Compromises
+## Technical Challenges & Difficulties Faced
 
-The original project guidelines requested a fully autonomous CI/CD pipeline capable of testing, containerizing, and automatically submitting the SLURM job to the Galileo100 cluster. However, strict CINECA security policies required us to adopt a "hybrid" deployment strategy.
+### Implementation Challenges
 
-During development, we encountered and documented the following limitations:
-1. **2FA & SSH Expiry:** Automated GitHub Actions cannot directly SSH into the cluster because CINECA enforces Two-Factor Authentication (2FA) via `smallstep`. The generated SSH certificates expire after 12 hours and require human interaction to renew, making permanent unattended CI/CD access impossible.
-2. **Unprivileged CI Runners:** We attempted to bypass the external SSH firewall by using CINECA's internal GitLab runners. However, these runners operate inside unprivileged Alpine Linux containers. They lack `root` and `fakeroot` permissions, making it impossible to use `apptainer build` from a definition (`.def`) file. Furthermore, the runners do not have access to the host's `sbatch` command or `slurmrestd`.
+**Timestamp Splitting Across Batch Boundaries**
 
-**The Solution:** We designed a robust compromise. We shifted the heavy lifting (testing and container building) to GitHub Actions and GHCR. We use the internal GitLab runner merely to securely pull and convert the image into a `.sif` file stored in the local registry. This allows the user to trigger the final deployment manually with a single script (`sync_and_submit.sh`), fully respecting cluster security rules while maintaining 90% automation.
+The most subtle correctness bug we encountered emerged during early snapshot and
+rules engine testing. When running the pipeline with an arbitrary `batch_size` that
+was not a clean multiple of the number of active sensors, a single logical timestamp
+would get physically split across two consecutive batches. This caused correlation
+rules (which require all sensor readings at a given timestamp to be present
+simultaneously) to silently fail: the engine would evaluate half a timestamp in one
+batch, find no correlation, and move on — producing neither an alarm nor a valid
+entry for that timestamp. The data was effectively lost without any error.
+
+The fix was twofold: the Orchestrator now auto-aligns the batch size to the nearest
+safe multiple of the sensor count at startup, and the test suite explicitly covers
+misaligned batch sizes to catch any future regression.
+
+**Pandas Single-Threaded Bottleneck and Migration to Polars**
+
+The initial prototype of the Rules Engine was built on Pandas DataFrames. While
+functional, Pandas operates on a fundamentally single-threaded execution model,
+meaning that even on a 32-core Galileo100 node, the rule evaluation would saturate
+only one CPU core and leave the remaining 31 idle. This made the system structurally
+incompatible with the scalability goals of an HPC environment.
+
+We migrated the entire evaluation pipeline to Polars, which is built on the Apache
+Arrow memory specification and implemented in Rust. This gave us native multi-threaded
+parallel execution via the Rayon thread pool without requiring any manual
+parallelization logic, effectively turning a single-threaded bottleneck into a
+pipeline that scales near-linearly with the number of available CPU cores. The
+migration required rewriting all boolean masking and aggregation logic from Pandas
+idioms to Polars Eager API expressions, a non-trivial effort that was supported by
+profiling tools and AI-assisted code translation (see GenAI section below).
+
+---
+
+### Infrastructure Challenges
+
+**2FA & SSH Expiry on CINECA**
+
+Automated GitHub Actions cannot directly SSH into the Galileo100 cluster because
+CINECA enforces Two-Factor Authentication via `smallstep`. The generated SSH
+certificates expire after 12 hours and require human interaction to renew, making
+permanent unattended CI/CD access impossible.
+
+**Unprivileged CI Runners**
+
+We attempted to bypass the external SSH firewall by using CINECA's internal GitLab
+runners. However, these runners operate inside unprivileged Alpine Linux containers
+without `root` or `fakeroot` permissions, making it impossible to use
+`apptainer build` from a definition file. The runners also lack access to the host's
+`sbatch` command or `slurmrestd`.
+
+**The Solution**
+
+We designed a robust hybrid strategy: GitHub Actions handles testing and Docker image
+building, pushing the production image to GHCR. The internal GitLab runner pulls and
+converts the image to a `.sif` file stored in the CINECA Package Registry. The final
+SLURM submission is triggered manually via `sync_and_submit.sh`, fully respecting
+cluster security policies while maintaining roughly 90% automation.
+
+---
+
+## Usage of Generative AI
+
+Throughout the project, we used Generative AI tools — primarily **Gemini 3 Pro**,
+**Gemini 3.1 Pro**, **GitHub Copilot**, and **Claude 3.5 Sonnet** — as technical
+consultants, teaching assistants, and syntax translators. In all cases, the
+architectural logic, design decisions, and initial drafts originated from the team.
+AI was used to accelerate specific subtasks, validate our reasoning, or translate
+between formats we were less familiar with. Every AI-generated output was reviewed,
+tested, and integrated only after verification.
+
+The interactions covered the following areas:
+
+**Requirements Engineering & Documentation (Gemini 3 Pro):** During Phase 1, we
+used Gemini to clarify theoretical distinctions (functional vs. non-functional
+requirements, UML actor definitions) and to refine the prose of the Project Goals
+section into a professional engineering register. The AI provided structured
+explanations that we used as a reference to review and finalize our own hand-written
+drafts. It also translated our Draw.io component and sequence diagrams into PlantUML
+syntax for version-controlled storage in the repository, while the original Draw.io
+versions were retained for the LaTeX document.
+
+**Codebase Review & Architectural Validation (Claude 3.5 Sonnet):** At a later
+stage, we submitted a consolidated export of the entire repository codebase for
+architectural review. The AI identified unreliable patterns in the test suite,
+including orchestrator signature mismatches and self-overwriting Golden Master tests.
+We evaluated each finding independently and implemented the fixes we deemed valid,
+discarding suggestions that did not apply to our specific architecture.
+
+**Pandas-to-Polars Migration (Gemini 3.1 Pro):** When we decided to migrate the
+Rules Engine from Pandas to Polars to unlock multi-threaded HPC scalability, we used
+Gemini to accelerate the translation of row-by-row Pandas evaluation logic into
+vectorized Polars Eager API expressions. The AI provided code examples for boolean
+masking, `cum_sum`-based streak calculation, and `diff()`-based step evaluation. We
+profiled the results ourselves and validated correctness against our existing test
+suite, which served as the ground truth for the migration.
+
+**CI/CD Pipeline & DevOps Automation (Gemini 3.1 Pro & GitHub Copilot):** The
+majority of the GitHub Actions and GitLab CI YAML configuration was drafted with AI
+assistance. This included the multi-stage Docker build and GHCR push pipeline, the
+GitLab REST API polling script for cross-platform observability, the SLURM NVMe
+scratch space optimization in `job.sh`, Docker Layer Caching configuration, and the
+Semantic Release setup for automated versioning. In all cases we provided the
+architectural intent and constraints; the AI translated them into correct YAML and
+bash syntax which we then tested and debugged directly on the cluster.
+
+**Documentation Infrastructure (Gemini 3.1 Pro & GitHub Copilot):** We used AI to
+generate `pdoc`-compatible docstrings for all source modules, which we reviewed and
+adjusted before committing. We also used it to design the CI step that autonomously
+recompiles the Phase 1 LaTeX document into a PDF and deploys it alongside the HTML
+API documentation to GitHub Pages on every push to `main`.
 
 ---
 
