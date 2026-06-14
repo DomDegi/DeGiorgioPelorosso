@@ -42,11 +42,9 @@ publish_sif:
   script:
     - echo "Cleaning up old packages to free up quota..."
     - |
-      # Fetch all packages named 'astralog-sif' sorted by creation date (newest first)
       curl --silent --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages?package_name=astralog-sif&order_by=created_at&sort=desc" > packages.json
 
-      # Extract package IDs, ignore the 'latest' tag, and skip the first 3 (which we want to keep)
       IDS_TO_DELETE=$(jq -r '.[] | select(.version != "latest") | .id' packages.json | tail -n +4)
 
       if [ -z "$IDS_TO_DELETE" ]; then
@@ -56,6 +54,7 @@ publish_sif:
           echo "Deleting old package ID: $ID..."
           curl --request DELETE --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
                "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/$ID"
+          sleep 1
         done
         echo "Cleanup complete."
       fi
@@ -63,9 +62,9 @@ publish_sif:
     - echo "Uploading .sif file to GitLab Package Registry..."
     - VERSION="${CI_COMMIT_SHORT_SHA}"
 
-    - test -s build/astralog-hpc.sif || (echo "ERROR: .sif is empty or missing" && exit 1)
+    # FIXED: Wrapped in single quotes to prevent YAML parsing the colon as a dictionary
+    - 'test -s build/astralog-hpc.sif || (echo "ERROR: .sif is empty or missing" && exit 1)'
 
-    # Uploads the specific commit version
     - |
       curl --fail \
            --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
