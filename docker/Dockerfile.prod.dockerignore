@@ -22,6 +22,14 @@ scripts/
 output/
 tests/
 
+# Exclude massive datasets and configs (mounted dynamically at runtime)
+inputs/
+
+# Exclude external cluster orchestration scripts
+run.sh
+submit.sh
+sync_and_submit.sh
+
 # SLURM job file
 job.sh
 

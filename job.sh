@@ -29,12 +29,11 @@ export POLARS_MAX_THREADS=$SLURM_CPUS_PER_TASK
 echo "Executing pipeline..."
 cd $SCRATCH_DIR
 
-singularity exec \
+singularity run \
     --pwd /workspace \
     --bind $SCRATCH_DIR/inputs:/workspace/inputs \
     --bind $SCRATCH_DIR/output:/workspace/output \
     astralog-hpc.sif \
-    python3 -m src.main \
     --batch_size 200000 \
     --input_path inputs/csv_input/$CSV_FILENAME \
     --output_path output \

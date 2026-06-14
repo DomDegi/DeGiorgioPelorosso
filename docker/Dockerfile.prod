@@ -17,5 +17,5 @@ RUN pip install --upgrade pip && \
 # Copy your actual application code into the container
 COPY . /workspace
 
-# This is what Singularity/Slurm will run by default
-CMD ["python", "main.py"]
+# Lock the container to execute the module correctly
+ENTRYPOINT ["python", "-m", "src.main"]
