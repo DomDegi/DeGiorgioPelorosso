@@ -43,3 +43,6 @@ PROMPT*.md
 # Recap file
 src_recap.txt
 test_recap.txt
+
+# Job results
+astralog_results*
