@@ -42,29 +42,39 @@ publish_sif:
   script:
     - echo "Cleaning up old packages to free up quota..."
     - |
+      # 1. Fetch the package list
       curl --silent --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages?package_name=astralog-sif&order_by=created_at&sort=desc" > packages.json
 
+      # 2. Extract standard IDs to delete
       IDS_TO_DELETE=$(jq -r '.[] | select(.version != "latest") | .id' packages.json | tail -n +4)
 
-      if [ -z "$IDS_TO_DELETE" ]; then
-        echo "No old packages found to delete. Proceeding..."
-      else
+      # 3. Extract the ID of the 'latest' package so we can wipe it clean before uploading the new one
+      LATEST_ID=$(jq -r '.[] | select(.version == "latest") | .id' packages.json)
+
+      # 4. Execute standard package cleanup using the Personal Access Token (CINECA_PAT)
+      if [ -n "$IDS_TO_DELETE" ]; then
         for ID in $IDS_TO_DELETE; do
           echo "Deleting old package ID: $ID..."
-          curl --request DELETE --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+          curl --request DELETE --header "PRIVATE-TOKEN: ${CINECA_PAT}" \
                "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/$ID"
           sleep 1
         done
-        echo "Cleanup complete."
+      fi
+
+      # 5. Delete the old 'latest' package to prevent file stacking
+      if [ -n "$LATEST_ID" ] && [ "$LATEST_ID" != "null" ]; then
+          echo "Wiping the old 'latest' package (ID: $LATEST_ID)..."
+          curl --request DELETE --header "PRIVATE-TOKEN: ${CINECA_PAT}" \
+               "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/$LATEST_ID"
+          sleep 1
       fi
 
     - echo "Uploading .sif file to GitLab Package Registry..."
     - VERSION="${CI_COMMIT_SHORT_SHA}"
-
-    # FIXED: Wrapped in single quotes to prevent YAML parsing the colon as a dictionary
     - 'test -s build/astralog-hpc.sif || (echo "ERROR: .sif is empty or missing" && exit 1)'
 
+    # Uploads the specific commit version
     - |
       curl --fail \
            --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
@@ -72,8 +82,7 @@ publish_sif:
            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/astralog-sif/${VERSION}/astralog-hpc.sif"
 
     - echo "Updating the 'latest' tag..."
-
-    # Uploads the 'latest' version to easily overwrite the old one
+    # Uploads a fresh 'latest' version
     - |
       curl --fail \
            --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
