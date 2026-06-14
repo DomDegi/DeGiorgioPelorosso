@@ -293,14 +293,17 @@ Our project utilizes a modern, zero-touch CI/CD pipeline spanning across GitHub 
 ---
 
 ### CI/CD Environment Configuration
-To enable the automated cross-platform deployment, the following Repository Secrets must be configured in GitHub (`Settings > Secrets and variables > Actions`):
+To enable the automated cross-platform deployment and ensure the institutional registries do not hit storage quotas, specific variables must be configured across both platforms.
 
+**1. GitHub Repository Secrets** (`Settings > Secrets and variables > Actions`):
 * `GITLAB_USERNAME`: Your CINECA institutional username.
-* `CINECA_GITLAB_TOKEN`: A Personal Access Token generated on CINECA's GitLab instance. **Required Scopes:** `read_api`, `read_repository`, and `write_repository`.
+* `CINECA_GITLAB_TOKEN`: A Personal Access Token generated on CINECA's GitLab instance. **Required Scopes:** `read_api`, `read_repository`, and `write_repository`. (Used to mirror the repository).
 * `CODECOV_TOKEN`: The repository upload token from Codecov.io, required to publish the automated test coverage reports.
 * `RELEASE_TOKEN`: Custom token used by Semantic Release to trigger the docs.yml workflow when moving to a new version.
 * *Note:* GitHub automatically injects the standard `GITHUB_TOKEN` required to build and push to the GitHub Container Registry (GHCR), so no manual configuration is needed for the Docker build phase.
 
+**2. CINECA GitLab CI/CD Variables** (`Settings > CI/CD > Variables`):
+* `CINECA_PAT`: A dedicated Personal Access Token generated on CINECA's GitLab instance. **Required Scope:** `api`. (Used by the GitLab runner to securely delete old `.sif` containers and prevent storage quota exhaustion). *This must be configured as a Masked variable.*
 ---
 
 ## Cluster Operating Procedure (CINECA G100)
