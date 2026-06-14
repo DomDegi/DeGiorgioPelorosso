@@ -4,5 +4,6 @@
     { "rule_id": "R3", "type": "step_difference", "sensor_id": "S1", "operator": ">", "value": 2.0, "priority": "HIGH" },
     { "rule_id": "R4", "type": "simple", "sensor_id": "S3", "operator": "==", "value": 1.0, "priority": "LOW" },
     { "rule_id": "R5", "type": "correlation", "conditions": ["R1", "R4"], "logic": "AND", "priority": "HIGH" },
-    { "rule_id": "R6", "type": "correlation", "conditions": ["R2", "R3"], "logic": "OR", "priority": "HIGH" }
+    { "rule_id": "R6", "type": "correlation", "conditions": ["R2", "R3"], "logic": "OR", "priority": "HIGH" },
+    { "rule_id": "R7", "type": "correlation", "conditions": ["R1", "R2", "R4"], "logic": "AND", "priority": "HIGH" }
 ]
