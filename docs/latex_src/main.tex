@@ -4,6 +4,7 @@
 \usepackage[utf8]{inputenc}
 \usepackage[margin=1in]{geometry} % Standard professional margins
 \usepackage{graphicx}             % For importing UML diagrams (PNG, PDF, JPEG)
+\usepackage{longtable}
 \usepackage{booktabs}             % For high-quality professional tables
 \usepackage{tabularx}             % For tables that auto-stretch to page width
 \usepackage[table,xcdraw]{xcolor}
@@ -49,7 +50,7 @@
 
     \vfill
 
-    {\large \textbf{Version:} 1.4.0 \par}
+    {\large \textbf{Version:} 1.0 \par}
     {\large \textbf{Release Date:} \today \par}
     {\large \textbf{Academic Year:} 2025-2026 \par}
 \end{titlepage}
@@ -133,38 +134,86 @@ The system identifies five primary use cases:
 \end{enumerate}
 
 \subsubsection{Detailed Use Case: EvaluateValidityRules}
-The most critical use case is \textbf{UC-4}, as it process ensures the accurate identification of nominal data and errors.
+The most critical use case is \textbf{UC-4}, as it ensures the accurate
+identification of nominal data and anomalies across all rule types.
 
-\begin{table}[h]
-\centering
-\renewcommand{\arraystretch}{1.5}
-\begin{tabular}{|p{3.5cm}|p{10.5cm}|}
+\renewcommand{\arraystretch}{1.6}
+\begin{longtable}{|p{3.5cm}|p{10.5cm}|}
+
+% First page header
 \hline
 \textbf{Use Case Name} & EvaluateValidityRules (UC-4) \\ \hline
-\textbf{Actors} & AstraLog-HPC System (Rules Engine), System Operator\\ \hline
-\textbf{Description} & The system evaluates a batch of sanitized telemetry data. For each timestamp, it checks if any validity rule is triggered. \\ \hline
+\endfirsthead
+
+% Other pages header
+\hline
+\multicolumn{2}{|c|}{\textit{Continued from previous page}} \\ \hline
+\textbf{Use Case Name} & EvaluateValidityRules (UC-4) (Cont.) \\ \hline
+\endhead
+
+% Other pages footer
+\hline
+\multicolumn{2}{|r|}{\textit{Continued on next page\ldots}} \\ \hline
+\endfoot
+
+% Last page footer
+\hline
+\endlastfoot
+
+% Table body
+\textbf{Actors} & AstraLog-HPC System, System Operator \\ \hline
+
+\textbf{Description} &
+The system evaluates a validated batch of telemetry data against all active
+rules. It processes base rules, resolves cross-sensor correlation rules,
+and finally partitions the data into valid telemetry and anomalies. \\ \hline
+
 \textbf{Pre-conditions} &
-\texttt{rules.json} valid for Rules Engine initialization. \newline
-A batch of extracted and sanitized sensor data.
-\\ \hline
-\textbf{Trigger} & Extract\&SanitizeData outputs a preprocessed batch.
-\\ \hline
-\textbf{Main Success Scenario (Main Flow)} &
-1. Iterates through the rules present in the \texttt{rules.json} by priority, acting on the batch entries that contain the same sensor\_id as the rule. \newline
-2. The Rules Engine evaluates Simple, Step and Stateful rules, and at last it evaluates Correlation rules. \newline
-3a. If the telemetry readings from all sensors for a given timestamps are valid, they get appended in the valid\_telemetry temporary variable. \newline
-3b. If a timestamp has one or more invalid readings, those readings get appended in alarm\_telemetry temporary variable. \newline
-4. Both variables are passed on to the OutputFormatter.
-\\ \hline
-\textbf{Alternative Flows} &
-\textbf{A1. Data Insufficiency for Stateful/Step Rules:} If the previous timestamp ($T_{n-1}$) is missing, the system skips evaluation for relative rules and logs a warning.
-\\ \hline
-\textbf{Post-conditions} &
-\texttt{valid\_telemetry} temporary variable contains only valid data in the analyzed batch. \newline
-\texttt{alarm\_telemetry} temporary variable contains a complete trace of all detected anomalies in the analyzed batch.
-\\ \hline
-\end{tabular}
-\end{table}
+Validation rules are successfully loaded and prioritized
+(HIGH $>$ MEDIUM $>$ LOW). \\
+& A structurally valid and sanitized batch of telemetry data is available
+for processing. \\ \hline
+
+\textbf{Trigger} &
+The data extraction and sanitization phase successfully outputs a new data batch. \\ \hline
+
+\textbf{Main Success} & \textbf{Phase 1 — Base Rule Evaluation:} \\
+\textbf{Scenario} & \textbf{1.} The system isolates the data for each specific sensor defined in the base rules. \\
+& \textbf{2a.} \textit{Simple:} The system evaluates the data against static threshold conditions; breaching measurements are flagged. \\
+& \textbf{2b.} \textit{Step Difference:} The system evaluates the rate of change between consecutive readings. It retrieves the last known value from the previous batch to evaluate the first row, and persists the current batch's final value for future use. \\
+& \textbf{2c.} \textit{Stateful:} The system tracks uninterrupted streaks of threshold breaches. It retrieves the ongoing streak count from the previous batch, increments it as necessary, and flags an anomaly if the defined consecutive limit is reached. The final streak state is persisted. \\
+& \textbf{3.} The system records the identified anomalies for each evaluated base rule. \\
+& \\ % Empty row for visual separation
+& \textbf{Phase 2 — Correlation Rule Resolution:} \\
+& \textbf{4.} The system processes correlation rules that depend on multiple base conditions. \\
+& \textbf{5.} It retrieves the previously recorded anomaly timestamps for all dependent conditions. \\
+& \textbf{6a.} \textit{AND logic:} The system retains only the timestamps where \textit{all} specified conditions are violated simultaneously. \\
+& \textbf{6b.} \textit{OR logic:} The system retains the timestamps where \textit{at least one} of the specified conditions is violated. \\
+& \textbf{7.} A unified anomaly record is generated for the correlated breach, aggregating the context of all involved sensors. \\
+& \\
+& \textbf{Phase 3 — Separation \& Deterministic Sorting:} \\
+& \textbf{8.} The system aggregates all identified anomalies across all evaluated rules. \\
+& \textbf{9.} \textit{Timestamp-level granularity:} Any timestamp containing at least one anomaly is entirely excluded from the valid telemetry dataset, ensuring strict temporal integrity. \\
+& \textbf{10.} The generated anomaly records are sorted deterministically (by timestamp, priority, and identifiers) to guarantee reproducible reporting. \\ \hline
+
+\textbf{Alternative} & \textbf{A1. Missing prior state for historical rules:} \\
+\textbf{Flows} & If no historical data exists for Step or Stateful rules (e.g., during a cold start or first batch), the system initializes the evaluation with safe defaults (zero delta, zero streak) and proceeds normally. \\
+& \\
+& \textbf{A2. Invalid logic operator in Correlation rule:} \\
+& If a correlation rule contains an unsupported logical operator during the loading phase, the system logs an error and discards the rule. The system continues operations with the valid rules. \\
+& \\
+& \textbf{A3. Correlation rule missing dependencies:} \\
+& If a correlation rule lacks defined conditions at runtime, the system safely ignores it without generating false anomalies. \\
+& \\
+& \textbf{A4. Absent sensor data:} \\
+& If a rule targets a sensor that is not present in the current batch, the system evaluates it as compliant (no violation) and continues processing the remaining rules without interruption. \\ \hline
+
+\textbf{Post-conditions} & \textbf{Valid Telemetry:} A dataset containing only data points for timestamps where no rule violations occurred across any sensor. \\
+& \\
+& \textbf{Anomaly Records:} A deterministically sorted dataset containing detailed records of all identified anomalies, ready for downstream reporting or alerting. \\ \hline
+
+\end{longtable}
+
 \newpage
 \subsection{Domain Assumptions}
 
@@ -193,7 +242,7 @@ To maintain consistency between the long-term requirements of the system (Target
         \item \textbf{Simple Rule / Absolute Threshold:} Checks if a value exceeds a fixed threshold at a given time.
         \item \textbf{Step Difference Rule / Relative Variation:} Checks the difference between the current measurement and the measurement at the previous \texttt{time\_stamp}.
         \item \textbf{Stateful Rule / Measurement Persistence:} An anomaly is triggered only if a specific simple condition persists uninterrupted for a given number of consecutive \texttt{time\_stamps}.
-        \item \textbf{Logical Correlation Rule:} Combines the Boolean outcomes of other evaluated rules at the same timestamp using standard logical operators (AND / OR).
+        \item \textbf{Logical Correlation Rule:} Combines the Boolean outcomes of two or more other evaluated rules at the same timestamp using standard logical operators (AND / OR).
     \end{itemize}
 
     \item \textbf{Rule Identification:} Each validity rule has a unique \texttt{rule\_id} to ensure traceability during the evaluation process across all ingested data formats.
@@ -209,7 +258,7 @@ To maintain consistency between the long-term requirements of the system (Target
     \item the system shall allow jobs to be scheduled with a batch\_size through command line argument.
     \item the system shall read a local \texttt{rules.json} file specifying rules of data validity.
     \item system shall receive a stream of data in form of JSON packets.
-    \item system shall filter data packets checking their integrity and temporarily buffer the valid records in memory (RAM) prior to evaluation, without writing intermediate temporary files to disk.
+    \item system shall filter data packets checking their integrity and accumulate valid packets into a local batch\_file.
     \item when size of batch\_file reaches a threshold value specified in batch\_size, system shall apply validity rules to buffered data, respecting per-type priority ordering.
     \item if ALL data in analyzed time\_stamp are valid (NO rule violated), system shall append them to valid\_data.csv.
     \item if one or more data in analyzed time\_stamp are NOT valid, system shall enter an anomalous state and NOT save that time\_stamp in valid\_data.csv and append warnings to alarms.log file.
@@ -230,32 +279,63 @@ To maintain consistency between the long-term requirements of the system (Target
         \item a file containing input packets:
         \begin{verbatim}
         {
-            "timestamp": [ISO 8601],
-            "sensor_id": [str],
-            "value": [float],
-            "priority": [LOW/MEDIUM/HIGH],
+            "timestamp": "ISO 8601",
+            "sensor_id": "str",
+            "value": 0.0,
+            "priority": "LOW"      // LOW | MEDIUM | HIGH
         }
         \end{verbatim}
         \item \textbf{\texttt{rules.json:}}
         \begin{verbatim}
+        // simple
         {
-            "rule_id": [str],
-            "type": [simple/step_difference/stateful/correlation],
-            "sensor_id": [str],
-            "operator": [math_symbol],
-            "value": [float],
-            "consecutive_measurements": [int], #for stateful type only
-            "conditions": [ruled_id_1, ...], #for correlation type only
-            "priority": [LOW/MEDIUM/HIGH],
+            "rule_id": "str",
+            "type": "simple",
+            "sensor_id": "str",
+            "operator": ">",       // <, >, <=, >=, ==, !=
+            "value": 0.0,
+            "priority": "LOW"      // LOW | MEDIUM | HIGH
+        }
+
+        // step_difference
+        {
+            "rule_id": "str",
+            "type": "step_difference",
+            "sensor_id": "str",
+            "operator": ">",
+            "value": 0.0,
+            "priority": "LOW"
+        }
+
+        // stateful
+        {
+            "rule_id": "str",
+            "type": "stateful",
+            "sensor_id": "str",
+            "operator": ">",
+            "value": 0.0,
+            "consecutive_measurements": 3,
+            "priority": "MEDIUM"
+        }
+        \end{verbatim}
+        \newpage
+        \begin{verbatim}
+        // correlation (accepting 2+ rules)
+        {
+            "rule_id": "str",
+            "type": "correlation",
+            "logic": "AND",        // AND | OR
+            "conditions": ["rule_id_1", "rule_id_2", "rule_id_3"],
+            "priority": "HIGH"
         }
         \end{verbatim}
         \item \textbf{\texttt{sensors.yaml:}}
         \begin{verbatim}
         {
             sensors:
-            - id: [str]
-              sampling_rate: [int]Hz
-              unit: [str]
+            - id: <str>
+              sampling_rate: <int>Hz
+              unit: <str>
             - ...
         }
         \end{verbatim}
@@ -464,7 +544,7 @@ interactions were structured as follows:
     \end{itemize}
     \vspace{0.3cm}
 
-    \item \textbf{Domain-Specific Terminology and Text Refinement}
+    \item \textbf{Codebase Review and Architectural Validation}
     \begin{itemize}[label={}, leftmargin=0.5cm]
         \item \textbf{Tool Used:} Claude 3.5 Sonnet
         \item \textbf{Prompt Concept:} "Analyze in detail the 'full\_project.txt' file (which consolidates the entire repository codebase) to identify critical architectural flaws and areas for improvement."
@@ -531,7 +611,7 @@ interactions were structured as follows:
         \item \textbf{Tool Used:} Gemini 3.1 Pro
         \item \textbf{Prompt Concept:} "How can I integrate pytest-cov and Codecov into my GitHub Actions pipeline to automate test coverage reporting and visualize it with a dynamic badge?"
         \item \textbf{AI Output:} Provided the CI YAML steps to generate JUnit XML reports, upload them to Codecov using the v4 action, and the markdown syntax for the dynamic repository badge.
-        \item \textbf{Integration:} Integrated into the CI pipeline and README, providing immediate, verifiable proof of the 93\% test coverage standard directly within the documentation.
+        \item \textbf{Integration:} Integrated into the CI pipeline and README, providing immediate, verifiable proof of the 96\% test coverage standard directly within the documentation.
     \end{itemize}
     \vspace{0.3cm}
 
