@@ -39,24 +39,40 @@ class PolarsRulesEngine(IRulesEngine):
     def _load_rules(self, path: str) -> list:
         """
         Private helper to load and sanitize rules from a JSON file.
+        Implements pre-flight checks suitable for HPC/Slurm environments.
 
         Args:
             path (str): Path to the JSON rules file.
 
         Returns:
-            list: A list of sanitized rule dictionaries.
+            list: A list of sanitized and validated rule dictionaries.
         """
 
         with open(path, "r") as f:
             raw_rules = json.load(f)
 
         valid_priorities = {"LOW", "MEDIUM", "HIGH"}
+        valid_logics = {"AND", "OR"}
         sanitized = []
+
         for r in raw_rules:
             priority = r.get("priority", "LOW").upper()
             if priority in valid_priorities:
                 r["priority"] = priority
+
+                # Slurm Pre-Flight validation for correlation rules
+                if r.get("type") == "correlation":
+                    logic = r.get("logic", "").upper()
+                    if logic not in valid_logics:
+                        logger.error(
+                            f"[SLURM PRE-FLIGHT] Rule {r.get('rule_id', 'UNKNOWN')} discarded: "
+                            f"unknown logic '{logic}'. Expected 'AND' or 'OR'."
+                        )
+                        continue  # Skip adding this malformed rule
+                    r["logic"] = logic
+
                 sanitized.append(r)
+
         return sanitized
 
     def _sort_rules_by_priority(self) -> None:
@@ -103,7 +119,7 @@ class PolarsRulesEngine(IRulesEngine):
 
         Processes the batch in three phases:
         1. Base Rules (Fully Vectorized simple, step, and stateful tracking).
-        2. Correlation Rules (Logical combinations of base rule masks).
+        2. Correlation Rules (Logical combinations of base rule masks supporting n-arguments).
         3. Separation & Sorting (Splits the frame into Nominal and Anomalous data).
 
         Args:
@@ -237,64 +253,81 @@ class PolarsRulesEngine(IRulesEngine):
                 )
                 alarms_list.append(failed)
 
-        # --- PHASE 2: Correlation Rules ---
+        # --- PHASE 2: Correlation Rules (N-Arguments Support) ---
         rule_to_sensor = {r["rule_id"]: r.get("sensor_id") for r in self.rules}
 
         for rule in [r for r in self.rules if r["type"] == "correlation"]:
-            c1, c2 = rule["conditions"][0], rule["conditions"][1]
-            mask_a = rule_masks.get(c1, pl.Series(values=[False] * batch.height))
-            mask_b = rule_masks.get(c2, pl.Series(values=[False] * batch.height))
+            conditions = rule.get("conditions", [])
+            if not conditions:
+                continue
 
-            ts_a = batch.filter(mask_a)["timestamp"].unique()
-            ts_b = batch.filter(mask_b)["timestamp"].unique()
+            # 1. Collect all unique timestamps for each condition dynamically
+            ts_list = []
+            for c in conditions:
+                mask_c = rule_masks.get(c, pl.Series(values=[False] * batch.height))
+                ts_list.append(batch.filter(mask_c)["timestamp"].unique())
 
-            if rule["logic"] == "AND":
-                target_ts = ts_a.filter(ts_a.is_in(ts_b))
-            else:  # OR
-                target_ts = pl.concat([ts_a, ts_b]).unique()
+            # 2. Apply AND / OR logic safely with runtime resilience
+            logic = rule.get("logic", "UNKNOWN")
+
+            if logic == "AND":
+                if not ts_list:
+                    continue
+                target_ts = ts_list[0]
+                for next_ts in ts_list[1:]:
+                    target_ts = target_ts.filter(target_ts.is_in(next_ts))
+
+            elif logic == "OR":
+                if not ts_list:
+                    continue
+                target_ts = pl.concat(ts_list).unique()
+
+            else:
+                # Runtime Error Catch: Safe failure for Slurm jobs
+                logger.error(
+                    f"[SLURM RUNTIME ERROR] Unhandled logic '{logic}' for "
+                    f"rule {rule['rule_id']}. Calculations for this rule will be skipped."
+                )
+                continue
 
             corr_mask = batch["timestamp"].is_in(target_ts)
             rule_masks[rule["rule_id"]] = corr_mask
 
+            # 3. Dynamic Alarm Construction
             if len(target_ts) > 0:
-                parent_sensors = [
-                    rule_to_sensor.get(c1, "UNKNOWN"),
-                    rule_to_sensor.get(c2, "UNKNOWN"),
-                ]
+                parent_sensors = [rule_to_sensor.get(c, "UNKNOWN") for c in conditions]
                 sensor_str = ",".join(parent_sensors)
 
                 corr_alarms = batch.filter(
                     corr_mask & batch["sensor_id"].is_in(parent_sensors)
                 )
-                if corr_alarms.height > 0:
-                    s1, s2 = parent_sensors[0], parent_sensors[1]
 
-                    # Ensure values are retrieved and concatenated in the exact chronological order of c1, c2
+                if corr_alarms.height > 0:
+                    # Dynamically build aggregation expressions for N sensors
+                    agg_exprs = []
+                    for i, s in enumerate(parent_sensors):
+                        agg_exprs.append(
+                            pl.col("value")
+                            .filter(pl.col("sensor_id") == s)
+                            .first()
+                            .alias(f"val{i}")
+                        )
+
                     grouped_corr = corr_alarms.group_by(
                         "timestamp", maintain_order=True
-                    ).agg(
-                        [
-                            pl.col("value")
-                            .filter(pl.col("sensor_id") == s1)
-                            .first()
-                            .alias("val1"),
-                            pl.col("value")
-                            .filter(pl.col("sensor_id") == s2)
-                            .first()
-                            .alias("val2"),
-                        ]
-                    )
+                    ).agg(agg_exprs)
+
+                    # Dynamically build expressions for string casting and concatenation
+                    val_cols = [f"val{i}" for i in range(len(parent_sensors))]
+                    cast_exprs = [
+                        pl.col(c).cast(pl.Utf8).fill_null("NaN") for c in val_cols
+                    ]
 
                     grouped_corr = (
-                        grouped_corr.with_columns(
-                            [
-                                pl.col("val1").cast(pl.Utf8).fill_null("NaN"),
-                                pl.col("val2").cast(pl.Utf8).fill_null("NaN"),
-                            ]
-                        )
+                        grouped_corr.with_columns(cast_exprs)
                         .with_columns(
                             pl.concat_str(
-                                [pl.col("val1"), pl.col("val2")], separator=","
+                                [pl.col(c) for c in val_cols], separator=","
                             ).alias("value")
                         )
                         .with_columns(

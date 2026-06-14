@@ -309,3 +309,133 @@ def test_invalid_operator_guard(engine):
     # It should either return 0 alarms safely or raise a specific known Exception
     valid, alarms = engine.evaluate_rules(batch)
     assert alarms.height == 0
+
+
+# ==========================================
+# TESTS FOR N-ARGUMENT CORRELATION LOGIC
+# ==========================================
+
+
+def test_correlation_rule_n_arguments_and(engine):
+    """
+    NEW FEATURE: A correlation rule with 'AND' logic supporting N arguments
+    should trigger only when ALL N conditions are met at the exact same timestamp,
+    and should properly concatenate N values and sensor IDs in the output.
+    """
+    engine.rules = [
+        {
+            "rule_id": "R_A",
+            "type": "simple",
+            "sensor_id": "S1",
+            "operator": ">",
+            "value": 10.0,
+            "priority": "LOW",
+        },
+        {
+            "rule_id": "R_B",
+            "type": "simple",
+            "sensor_id": "S2",
+            "operator": ">",
+            "value": 10.0,
+            "priority": "LOW",
+        },
+        {
+            "rule_id": "R_C",
+            "type": "simple",
+            "sensor_id": "S3",
+            "operator": ">",
+            "value": 10.0,
+            "priority": "LOW",
+        },
+        {
+            "rule_id": "R_CORR_N_AND",
+            "type": "correlation",
+            "logic": "AND",
+            "conditions": ["R_A", "R_B", "R_C"],  # 3 conditions
+            "priority": "HIGH",
+        },
+    ]
+
+    telemetry = pl.DataFrame(
+        {
+            "timestamp": ["T1", "T1", "T1", "T2", "T2", "T2"],
+            "sensor_id": ["S1", "S2", "S3", "S1", "S2", "S3"],
+            "value": [15.0, 20.0, 25.0, 15.0, 5.0, 25.0],
+            # T1: S1(15>10)=T, S2(20>10)=T, S3(25>10)=T. AND triggers.
+            # T2: S1(15>10)=T, S2(5>10)=F,  S3(25>10)=T. AND fails.
+        }
+    )
+
+    valid_df, alarm_df = engine.evaluate_rules(telemetry)
+
+    corr_alarms = alarm_df.filter(pl.col("rule_id") == "R_CORR_N_AND")
+
+    assert corr_alarms.height == 1, "N-argument AND should trigger exactly once"
+    assert corr_alarms["timestamp"][0] == "T1"
+
+    # Ensure all N sensor_ids and values are concatenated in exact chronological order
+    assert corr_alarms["sensor_id"][0] == "S1,S2,S3"
+    assert corr_alarms["value"][0] == "15.0,20.0,25.0"
+
+
+def test_correlation_rule_n_arguments_or(engine):
+    """
+    NEW FEATURE: A correlation rule with 'OR' logic supporting N arguments
+    should trigger when AT LEAST ONE of the N conditions is met, pulling in
+    'NaN' for missing/non-triggering values in the concatenated string.
+    """
+    engine.rules = [
+        {
+            "rule_id": "R_A",
+            "type": "simple",
+            "sensor_id": "S1",
+            "operator": ">",
+            "value": 50.0,
+            "priority": "LOW",
+        },
+        {
+            "rule_id": "R_B",
+            "type": "simple",
+            "sensor_id": "S2",
+            "operator": ">",
+            "value": 50.0,
+            "priority": "LOW",
+        },
+        {
+            "rule_id": "R_C",
+            "type": "simple",
+            "sensor_id": "S3",
+            "operator": ">",
+            "value": 50.0,
+            "priority": "LOW",
+        },
+        {
+            "rule_id": "R_CORR_N_OR",
+            "type": "correlation",
+            "logic": "OR",
+            "conditions": ["R_A", "R_B", "R_C"],  # 3 conditions
+            "priority": "HIGH",
+        },
+    ]
+
+    telemetry = pl.DataFrame(
+        {
+            "timestamp": ["T1", "T1"],
+            "sensor_id": ["S1", "S2"],
+            "value": [10.0, 60.0],
+            # T1: S1(10>50)=F, S2(60>50)=T, S3(Missing)=F. OR triggers because of S2.
+        }
+    )
+
+    valid_df, alarm_df = engine.evaluate_rules(telemetry)
+
+    corr_alarms = alarm_df.filter(pl.col("rule_id") == "R_CORR_N_OR")
+
+    assert (
+        corr_alarms.height == 1
+    ), "N-argument OR should trigger if any condition is met"
+    assert corr_alarms["timestamp"][0] == "T1"
+
+    assert corr_alarms["sensor_id"][0] == "S1,S2,S3"
+    # S1 was present but didn't trigger OR triggered as part of the timestamp block, S2 triggered, S3 missing -> NaN
+    assert corr_alarms["value"][0] == "10.0,60.0,NaN"
