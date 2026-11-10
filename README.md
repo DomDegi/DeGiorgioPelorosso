@@ -27,8 +27,8 @@ The team adopted a collaborative peer-review methodology throughout the project.
 
 | Name Surname | Person Code | Role / Main Focus | Effort (Hours) |
 | :--- | :--- | :--- | :--- |
-| **Domenico De Giorgio** | -------- | **Software Architect & DevOps:** System Architecture (UML), OOP Implementation, Multi-threaded Parallelization & Profiling, Scalability Analysis, CD Pipelines, Automated documentation infrastructure | 90h |
-| **Leonardo Pelorosso** | -------- | **Requirements & Quality Assurance Engineer:** Requirements Elicitation & Domain Assumptions, OOP Implementation, Core `pytest` Suite, CI Testing Pipeline, Docker & Singularity Containerization | 90h |
+| **Domenico De Giorgio** | - | **Software Architect & DevOps:** System Architecture (UML), OOP Implementation, Multi-threaded Parallelization & Profiling, Scalability Analysis, CD Pipelines, Automated documentation infrastructure | 90h |
+| **Leonardo Pelorosso** | - | **Requirements & Quality Assurance Engineer:** Requirements Elicitation & Domain Assumptions, OOP Implementation, Core `pytest` Suite, CI Testing Pipeline, Docker & Singularity Containerization | 90h |
 | **Both Members** | - | **Integration, Benchmarking & Review:** Cross-validated architectural decisions, conducted system benchmarking, and analysed performance on the Galileo100 SLURM platform. | 20h |
 | **Total** | | | **200h** |
 
